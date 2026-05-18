@@ -1,0 +1,24 @@
+# ROS2 workspace — artifacts de compilación
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+ros2_ws/.colcon_*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Windows/WSL Zone.Identifier
+*:Zone.Identifier
+
+# Imágenes y binarios grandes
+*.jpeg
+*.jpg
+*.png
+*.gif
+
+# Editor
+.vscode/
+*.swp
+*~

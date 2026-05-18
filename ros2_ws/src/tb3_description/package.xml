@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>tb3_description</name>
+  <version>0.1.0</version>
+  <description>
+    Descripción URDF/Xacro del TurtleBot3 Waffle.
+    Actúa como wrapper sobre nav2_minimal_tb3_sim y punto de extensión
+    para añadir OpenManipulator-X en fases posteriores.
+  </description>
+  <maintainer email="juankibenitez57@gmail.com">juanks</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>nav2_minimal_tb3_sim</depend>
+  <depend>xacro</depend>
+  <depend>robot_state_publisher</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

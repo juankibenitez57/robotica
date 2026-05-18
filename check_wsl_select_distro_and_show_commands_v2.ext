@@ -1,0 +1,169 @@
+@echo off
+setlocal EnableExtensions EnableDelayedExpansion
+chcp 65001 >nul
+
+title Verificacion WSL + seleccion de distro para instalador ROS 2 Jazzy
+
+set "BASE_DIR=C:\instalador"
+set "INSTALLER_SH=%BASE_DIR%\install_course_env_wsl_ubuntu2404_jazzy.sh"
+set "WSL_CMD=%SystemRoot%\System32\wsl.exe"
+set "LOG_FILE=%BASE_DIR%\check_wsl_select_distro_and_show_commands.log"
+
+if not exist "%BASE_DIR%" mkdir "%BASE_DIR%" >nul 2>&1
+
+echo ===========================================================  > "%LOG_FILE%"
+echo VERIFICACION SIMPLE WSL + SELECCION DE DISTRO              >> "%LOG_FILE%"
+echo =========================================================== >> "%LOG_FILE%"
+
+echo.
+echo ============================================================
+echo   VERIFICACION SIMPLE WSL + SELECCION DE DISTRO
+echo ============================================================
+echo.
+echo Este asistente asume que:
+echo   - El .bat esta en C:\instalador
+echo   - El .sh esta en C:\instalador
+echo.
+echo Se guardara un log en:
+echo   %LOG_FILE%
+echo.
+
+if not exist "%WSL_CMD%" (
+    echo ERROR: No se encuentra wsl.exe
+    echo ERROR: No se encuentra wsl.exe >> "%LOG_FILE%"
+    goto :fail
+)
+
+echo [1/5] Comprobando WSL...
+"%WSL_CMD%" --status >> "%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    echo ERROR: WSL no esta disponible.
+    echo Instala o repara WSL antes de continuar.
+    echo ERROR: WSL no esta disponible. >> "%LOG_FILE%"
+    goto :fail
+)
+echo OK: WSL detectado.
+echo.
+
+echo [2/5] Lista de distribuciones disponibles en WSL:
+echo.
+"%WSL_CMD%" --list --verbose
+echo.
+echo ----- LISTA DE DISTROS ----->> "%LOG_FILE%"
+"%WSL_CMD%" --list --verbose >> "%LOG_FILE%" 2>&1
+echo.>> "%LOG_FILE%"
+
+set "DISTRO_NAME="
+set /p "DISTRO_NAME=Escribe exactamente el nombre de la distro sobre la que quieres instalar: "
+echo Distro elegida por el usuario: %DISTRO_NAME%>> "%LOG_FILE%"
+
+if not defined DISTRO_NAME (
+    echo ERROR: No has indicado ninguna distro.
+    echo ERROR: No se indico ninguna distro. >> "%LOG_FILE%"
+    goto :fail
+)
+
+"%WSL_CMD%" -d "%DISTRO_NAME%" echo ok >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: La distro indicada no existe o no puede abrirse.
+    echo ERROR: La distro indicada no existe o no puede abrirse. >> "%LOG_FILE%"
+    goto :fail
+)
+
+echo OK: Distro seleccionada: %DISTRO_NAME%
+echo.
+
+echo [3/5] Verificando que la distro seleccionada es Ubuntu 24.04...
+"%WSL_CMD%" -d "%DISTRO_NAME%" bash -lc "test -f /etc/os-release && . /etc/os-release && printf 'ID=%s\nVERSION_ID=%s\nPRETTY_NAME=%s\n' \"$ID\" \"$VERSION_ID\" \"$PRETTY_NAME\" && [ \"$ID\" = \"ubuntu\" ] && [ \"$VERSION_ID\" = \"24.04\" ]" > "%TEMP%\distro_version_check.txt" 2>> "%LOG_FILE%"
+if exist "%TEMP%\distro_version_check.txt" type "%TEMP%\distro_version_check.txt"
+if exist "%TEMP%\distro_version_check.txt" type "%TEMP%\distro_version_check.txt" >> "%LOG_FILE%" 2>&1
+
+if errorlevel 1 (
+    echo.
+    echo ERROR: La distro %DISTRO_NAME% no es Ubuntu 24.04 compatible con el instalador.
+    echo ERROR: La distro %DISTRO_NAME% no es Ubuntu 24.04 compatible con el instalador. >> "%LOG_FILE%"
+    echo Se cancelan los siguientes pasos.
+    echo Se cancelan los siguientes pasos. >> "%LOG_FILE%"
+    goto :fail
+)
+echo OK: Ubuntu 24.04 validada.
+echo.
+
+echo [4/5] Comprobando que el instalador .sh existe en C:\instalador...
+if not exist "%INSTALLER_SH%" (
+    echo ERROR: No se encuentra el instalador .sh esperado.
+    echo Ruta esperada:
+    echo   %INSTALLER_SH%
+    echo ERROR: No se encuentra el instalador .sh esperado. >> "%LOG_FILE%"
+    goto :fail
+)
+echo OK: Instalador encontrado.
+echo Instalador encontrado: %INSTALLER_SH% >> "%LOG_FILE%"
+echo.
+
+echo [5/5] Preparando comandos para el terminal de Ubuntu...
+set "WIN_USER="
+set /p "WIN_USER=Escribe tu nombre de usuario de Windows: "
+echo Usuario Windows indicado: %WIN_USER%>> "%LOG_FILE%"
+
+if not defined WIN_USER (
+    echo ERROR: No has indicado el nombre de usuario de Windows.
+    echo ERROR: No se indico el nombre de usuario de Windows. >> "%LOG_FILE%"
+    goto :fail
+)
+
+set "WSL_SH_PATH=/mnt/c/instalador/install_course_env_wsl_ubuntu2404_jazzy.sh"
+
+echo.
+echo ============================================================
+echo   SISTEMA PREPARADO
+echo ============================================================
+echo.
+echo IMPORTANTE:
+echo - El siguiente comando "wsl -d" se ejecuta en PowerShell o CMD de Windows.
+echo - NO se ejecuta dentro del terminal de Ubuntu.
+echo.
+echo 1^) Primero, en PowerShell o CMD de Windows, ejecuta:
+echo.
+echo   wsl -d "%DISTRO_NAME%"
+echo.
+echo 2^) Despues, ya dentro del terminal de Ubuntu, ejecuta estos comandos:
+echo.
+echo   cp "%WSL_SH_PATH%" ~/install_course_env.sh
+echo   sed -i 's/\r$//' ~/install_course_env.sh
+echo   chmod +x ~/install_course_env.sh
+echo   bash ~/install_course_env.sh
+echo.
+echo Ruta de referencia del alumno en Windows:
+echo   C:\Users\%WIN_USER%
+echo.
+echo Ruta del instalador en Windows:
+echo   C:\instalador\install_course_env_wsl_ubuntu2404_jazzy.sh
+echo.
+echo Ruta esperada del instalador vista desde Ubuntu:
+echo   %WSL_SH_PATH%
+echo.
+echo Si el comando cp fallara, comprueba desde Ubuntu con:
+echo   ls -l /mnt/c/instalador
+echo.
+echo Y si hiciera falta, copia manualmente el .sh a tu HOME de Ubuntu y ejecuta:
+echo   bash ~/install_course_env.sh
+echo.
+echo RESULTADO: SISTEMA COMPATIBLE.
+echo RESULTADO: SISTEMA COMPATIBLE. >> "%LOG_FILE%"
+echo Distro final: %DISTRO_NAME%>> "%LOG_FILE%"
+echo Usuario Windows: %WIN_USER%>> "%LOG_FILE%"
+echo Ruta WSL del .sh: %WSL_SH_PATH%>> "%LOG_FILE%"
+echo.
+pause
+exit /b 0
+
+:fail
+echo.
+echo RESULTADO: SISTEMA NO COMPATIBLE.
+echo RESULTADO: SISTEMA NO COMPATIBLE. >> "%LOG_FILE%"
+echo Revisa el log:
+echo   %LOG_FILE%
+echo.
+pause
+exit /b 1

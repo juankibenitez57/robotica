@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<robot name="tb3_waffle" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!--
+    Descripción principal del TurtleBot3 Waffle.
+
+    FASE ACTUAL: referencia directa al URDF de nav2_minimal_tb3_sim.
+    FASE FUTURA: añadir OpenManipulator-X como xacro:include adicional aquí.
+
+    Para añadir el brazo en el futuro:
+      <xacro:include filename="$(find openmanipulator_description)/urdf/open_manipulator.urdf.xacro"/>
+      <xacro:open_manipulator parent="base_link" .../>
+  -->
+  <xacro:include filename="$(find nav2_minimal_tb3_sim)/urdf/turtlebot3_waffle.urdf"/>
+</robot>
