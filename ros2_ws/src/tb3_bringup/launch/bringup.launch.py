@@ -4,10 +4,15 @@ bringup.launch.py
 Launcher maestro: arranca TODO el stack de navegación autónoma.
 
 Modos disponibles (argumento 'nav_mode'):
-  slam         → Gazebo + EKF + SLAM Toolbox + NAV2 + RViz
+  slam         → Gazebo + SLAM Toolbox + RViz
                  Usar para crear el mapa por primera vez.
-  navigation   → Gazebo + EKF + Localización AMCL + NAV2 + RViz
+                 Mueve el robot con teleop para construir el mapa.
+                 Guarda el mapa con:
+                   ros2 run nav2_map_server map_saver_cli -f ~/map
+
+  navigation   → Gazebo + Localización AMCL + NAV2 + RViz
                  Usar cuando ya tienes el mapa guardado.
+                 Envía objetivos con el botón "2D Goal Pose" en RViz.
 
 Uso:
   # Modo SLAM (crear mapa):
@@ -17,7 +22,7 @@ Uso:
   ros2 launch tb3_bringup bringup.launch.py nav_mode:=navigation
 
   # Modo navegación con mapa específico:
-  ros2 launch tb3_bringup bringup.launch.py nav_mode:=navigation \
+  ros2 launch tb3_bringup bringup.launch.py nav_mode:=navigation \\
     map:=/home/user/maps/mi_mapa.yaml
 """
 
@@ -27,7 +32,6 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
-    GroupAction,
     IncludeLaunchDescription,
 )
 from launch.conditions import IfCondition
@@ -60,7 +64,10 @@ def generate_launch_description():
     x_pose   = LaunchConfiguration('x_pose')
     y_pose   = LaunchConfiguration('y_pose')
 
-    # ── 1. Gazebo ─────────────────────────────────────────────────────────────
+    is_slam = PythonExpression(["'", nav_mode, "' == 'slam'"])
+    is_nav  = PythonExpression(["'", nav_mode, "' == 'navigation'"])
+
+    # ── 1. Gazebo (siempre) ───────────────────────────────────────────────────
     gazebo_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(launch_dir, 'gazebo.launch.py')),
@@ -70,38 +77,44 @@ def generate_launch_description():
             'use_rviz': 'false',
         }.items())
 
-    # ── 2. EKF ────────────────────────────────────────────────────────────────
-    ekf_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(launch_dir, 'ekf.launch.py')))
-
-    # ── 3a. SLAM (modo slam) ───────────────────────────────────────────────────
+    # ── 2a. SLAM Toolbox (solo en modo slam) ──────────────────────────────────
     slam_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(launch_dir, 'slam.launch.py')),
-        condition=IfCondition(
-            PythonExpression(["'", nav_mode, "' == 'slam'"])),
+        condition=IfCondition(is_slam),
         launch_arguments={'use_rviz': 'false'}.items())
 
-    # ── 3b. Localización AMCL (modo navigation) ────────────────────────────────
+    # ── 2b. Localización AMCL (solo en modo navigation) ──────────────────────
     localization_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(launch_dir, 'localization.launch.py')),
-        condition=IfCondition(
-            PythonExpression(["'", nav_mode, "' == 'navigation'"])),
+        condition=IfCondition(is_nav),
         launch_arguments={'map': map_file}.items())
 
-    # ── 4. NAV2 ───────────────────────────────────────────────────────────────
+    # ── 3. NAV2 (solo en modo navigation) ────────────────────────────────────
     navigation_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(launch_dir, 'navigation.launch.py')))
+            os.path.join(launch_dir, 'navigation.launch.py')),
+        condition=IfCondition(is_nav))
 
-    # ── 5. RViz2 ──────────────────────────────────────────────────────────────
-    rviz = Node(
+    # ── 4. RViz2 ──────────────────────────────────────────────────────────────
+    # Modo slam: usa slam_view.rviz (vista TopDown optimizada para mapeo)
+    # Modo nav:  usa nav2.rviz (con costmaps, paths, AMCL particles)
+    rviz_slam = Node(
         package='rviz2',
         executable='rviz2',
         name='rviz2',
         output='screen',
+        condition=IfCondition(is_slam),
+        arguments=['-d', os.path.join(pkg_bringup, 'config', 'rviz', 'slam_view.rviz')],
+        parameters=[{'use_sim_time': True}])
+
+    rviz_nav = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='screen',
+        condition=IfCondition(is_nav),
         arguments=['-d', os.path.join(pkg_bringup, 'config', 'rviz', 'nav2.rviz')],
         parameters=[{'use_sim_time': True}])
 
@@ -111,9 +124,9 @@ def generate_launch_description():
         declare_x,
         declare_y,
         gazebo_launch,
-        ekf_launch,
         slam_launch,
         localization_launch,
         navigation_launch,
-        rviz,
+        rviz_slam,
+        rviz_nav,
     ])

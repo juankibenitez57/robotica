@@ -150,9 +150,9 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: false
-        base_link:
+        base_footprint:
           Value: true
-        lidar_link:
+        base_scan:
           Value: true
         map:
           Value: true
@@ -166,8 +166,8 @@ Visualization Manager:
       Tree:
         map:
           odom:
-            base_link:
-              lidar_link:
+            base_footprint:
+              base_scan:
                 {}
       Update Interval: 0
       Value: true

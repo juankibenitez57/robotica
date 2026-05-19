@@ -133,7 +133,7 @@
           </material>
         </visual>
 
-        <sensor name="hls_lfcd_lds" type="lidar">
+        <sensor name="hls_lfcd_lds" type="gpu_lidar">
           <always_on>true</always_on>
           <visualize>true</visualize>
           <pose>-0.064 0 0.15 0 0 0</pose>
