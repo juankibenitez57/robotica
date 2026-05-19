@@ -1,88 +1,13 @@
 # nav2_params.yaml
 # ----------------
-# Configuración completa del stack NAV2 para TurtleBot3 Waffle en Jazzy.
-# Incluye: AMCL, map_server, planner, controller, bt_navigator, behaviors.
+# Stack NAV2 para TurtleBot3 Waffle en ROS2 Jazzy.
+# Contiene: bt_navigator, controller_server (DWB), planner_server (NavFn),
+#           costmaps global/local, behavior_server, waypoint_follower,
+#           velocity_smoother, map_server, map_saver.
 #
-# TB3 Waffle specs:
-#   max_vel_x:       0.26 m/s
-#   max_vel_theta:   1.82 rad/s
-#   wheel_sep:       0.287 m
-#   footprint:       [-0.21,-0.165] [0.077,0.165] (rectangular)
-
-# ════════════════════════════════════════════════════════════════════════════
-# AMCL — Adaptive Monte Carlo Localization
-# Localiza el robot en el mapa usando filtro de partículas + LiDAR
-# ════════════════════════════════════════════════════════════════════════════
-amcl:
-  ros__parameters:
-    use_sim_time: true
-
-    # ── Modelo de movimiento diferencial ──────────────────────────────────────
-    # alpha1-4: error del modelo de movimiento (translación/rotación)
-    # Valores bajos = robot más predecible (buenos encoders)
-    alpha1: 0.2    # error rotación→rotación
-    alpha2: 0.2    # error traslación→rotación
-    alpha3: 0.2    # error traslación→traslación
-    alpha4: 0.2    # error rotación→traslación
-    alpha5: 0.2    # (no usado en diff drive)
-
-    # ── Frames ────────────────────────────────────────────────────────────────
-    base_frame_id: base_footprint
-    global_frame_id: map
-    odom_frame_id: odom
-
-    # ── Partículas ────────────────────────────────────────────────────────────
-    # min/max: número de partículas del filtro
-    # Más partículas = más preciso pero más lento
-    min_particles: 500
-    max_particles: 2000
-    pf_err: 0.05    # error máximo del filtro
-    pf_z: 0.99      # probabilidad cubierta por las muestras
-
-    # ── Actualización ─────────────────────────────────────────────────────────
-    # Solo actualiza si el robot se ha movido suficiente
-    update_min_d: 0.25    # 25 cm de traslación
-    update_min_a: 0.2     # 0.2 rad de rotación
-    resample_interval: 1
-
-    # ── Modelo de sensor (likelihood_field es el más robusto) ─────────────────
-    laser_model_type: likelihood_field
-    laser_max_range: 12.0
-    laser_min_range: -1.0
-    max_beams: 60
-
-    # laser_z_hit:   fracción de lecturas correctas (hits)
-    # laser_z_rand:  fracción de lecturas aleatorias (ruido)
-    # sigma_hit:     desviación estándar del modelo de hit (metros)
-    laser_likelihood_max_dist: 2.0
-    laser_z_hit: 0.5
-    laser_z_rand: 0.5
-    z_hit: 0.5
-    z_max: 0.05
-    z_rand: 0.5
-    z_short: 0.05
-    sigma_hit: 0.2
-    lambda_short: 0.1
-
-    # ── Comportamiento ────────────────────────────────────────────────────────
-    do_beamskip: false
-    beam_skip_distance: 0.5
-    beam_skip_error_threshold: 0.9
-    beam_skip_threshold: 0.3
-    recovery_alpha_fast: 0.0
-    recovery_alpha_slow: 0.0
-    tf_broadcast: true
-    transform_tolerance: 1.0
-    save_pose_rate: 0.5
-
-    robot_model_type: nav2_amcl::DifferentialMotionModel
-    scan_topic: scan
-    set_initial_pose: true
-    initial_pose:
-      x: 0.0
-      y: 0.0
-      z: 0.0
-      yaw: 0.0
+# AMCL → config/amcl.yaml  (cargado por localization.launch.py)
+#
+# TB3 Waffle: max_vel_x=0.26 m/s  max_vel_theta=1.82 rad/s
 
 # ════════════════════════════════════════════════════════════════════════════
 # BT NAVIGATOR — Behavior Tree Navigator

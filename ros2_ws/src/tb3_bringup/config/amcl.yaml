@@ -1,0 +1,109 @@
+amcl:
+  ros__parameters:
+    use_sim_time: true
+
+    # ── Modelo de movimiento diferencial ─────────────────────────────────────
+    # alpha1: error de rotación causado por rotación (giro in situ)
+    # alpha2: error de rotación causado por traslación (deriva al avanzar)
+    # alpha3: error de traslación causado por traslación (ruido de ruedas)
+    # alpha4: error de traslación causado por rotación (giro desigual)
+    # Valores más altos = robot más impredecible = filtro más conservador
+    # Valores más bajos = modelo más confiado (buenos encoders / simulación)
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.2
+    alpha4: 0.2
+    alpha5: 0.2
+
+    # ── Frames TF ─────────────────────────────────────────────────────────────
+    # base_frame_id: frame del robot. TB3 usa base_footprint (no base_link)
+    # global_frame_id: frame del mapa
+    # odom_frame_id: frame de odometría
+    base_frame_id: base_footprint
+    global_frame_id: map
+    odom_frame_id: odom
+
+    # ── Filtro de partículas ───────────────────────────────────────────────────
+    # min_particles: mínimo de partículas — nunca baja de este número
+    #   Muy bajo (< 100) → pierde precisión en entornos complejos
+    #   Muy alto (> 5000) → CPU alta, no aporta más precisión
+    min_particles: 500
+    # max_particles: máximo de partículas en fase de incertidumbre alta
+    #   Se reducen automáticamente cuando AMCL converge
+    max_particles: 2000
+    # pf_err: error máximo del filtro (fracción de la distribución)
+    pf_err: 0.05
+    # pf_z: fracción de la distribución cubierta por las muestras (0.99 = 99%)
+    pf_z: 0.99
+
+    # ── Umbrales de actualización ─────────────────────────────────────────────
+    # AMCL solo actualiza las partículas cuando el robot se ha movido suficiente.
+    # Esto evita procesar scans redundantes cuando el robot está quieto.
+    #
+    # update_min_d: movimiento lineal mínimo (metros) antes de procesar un scan
+    #   0.25 = actualiza cada 25 cm de movimiento
+    update_min_d: 0.25
+    # update_min_a: rotación mínima (radianes) antes de procesar un scan
+    #   0.2 rad ≈ 11.5° de giro
+    update_min_a: 0.2
+    resample_interval: 1
+
+    # ── Modelo del sensor láser (likelihood_field) ────────────────────────────
+    # likelihood_field: el modelo más robusto y usado en la práctica.
+    # En lugar de modelar físicamente el rayo, compara puntos del scan con
+    # el mapa más cercano y asigna probabilidad gaussiana.
+    laser_model_type: likelihood_field
+    laser_max_range: 12.0
+    laser_min_range: -1.0
+    max_beams: 60
+    laser_likelihood_max_dist: 2.0
+
+    # laser_z_hit: peso del modelo de hit (fracción de lecturas "correctas")
+    #   0.5 = 50% de lecturas se consideran hits válidos del mapa
+    laser_z_hit: 0.5
+    # laser_z_rand: peso del ruido aleatorio (lecturas no explicadas por el mapa)
+    #   0.5 = 50% de lecturas se consideran ruido
+    laser_z_rand: 0.5
+    # laser_sigma_hit: desviación estándar del modelo gaussiano de hit (metros)
+    #   0.2 = un hit es válido dentro de ±20 cm del obstáculo del mapa
+    #   Más pequeño = más estricto / más grande = más tolerante
+    laser_sigma_hit: 0.2
+    z_hit: 0.5
+    z_max: 0.05
+    z_rand: 0.5
+    z_short: 0.05
+    sigma_hit: 0.2
+    lambda_short: 0.1
+
+    # ── Beam skip (filtro de lecturas anómalas) ───────────────────────────────
+    do_beamskip: false
+    beam_skip_distance: 0.5
+    beam_skip_error_threshold: 0.9
+    beam_skip_threshold: 0.3
+
+    # ── Recuperación automática ────────────────────────────────────────────────
+    # Si el robot se pierde completamente, añade partículas aleatorias en todo
+    # el mapa. Desactivado por defecto (recovery_alpha = 0.0).
+    # Activar si el robot tiene problemas de re-localización.
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+
+    # ── TF y timing ───────────────────────────────────────────────────────────
+    tf_broadcast: true
+    transform_tolerance: 1.0
+    save_pose_rate: 0.5
+
+    # ── Configuración del robot ────────────────────────────────────────────────
+    robot_model_type: nav2_amcl::DifferentialMotionModel
+    scan_topic: scan
+
+    # ── Pose inicial ──────────────────────────────────────────────────────────
+    # set_initial_pose: si true, AMCL inicializa en initial_pose sin esperar
+    # a que el usuario envíe /initialpose desde RViz.
+    # Útil en simulación donde el robot siempre arranca en la misma posición.
+    set_initial_pose: true
+    initial_pose:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0

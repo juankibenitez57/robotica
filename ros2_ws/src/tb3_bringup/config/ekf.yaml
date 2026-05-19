@@ -29,8 +29,13 @@ ekf_filter_node:
     # ── Frames TF ─────────────────────────────────────────────────────────────
     map_frame: map
     odom_frame: odom
-    base_link_frame: base_footprint   # TB3 usa base_footprint como raíz
-    world_frame: odom                 # EKF publica odom→base_footprint
+    base_link_frame: base_footprint
+    world_frame: odom
+
+    # publish_tf: false → el bridge ya publica odom→base_footprint desde Gazebo
+    # Si lo dejamos en true, hay dos fuentes para el mismo TF → conflicto.
+    # El EKF solo aporta /odometry/filtered (odometría suavizada para NAV2).
+    publish_tf: false
 
     # ── Fuente 1: Odometría de ruedas ─────────────────────────────────────────
     # Publicada por DiffDrive en Gazebo, bridgeada por ros_gz_bridge
