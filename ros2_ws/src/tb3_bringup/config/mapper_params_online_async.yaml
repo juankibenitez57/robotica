@@ -15,8 +15,9 @@ slam_toolbox:
     # ── Tópicos y frames ──────────────────────────────────────────────────────
     odom_frame: odom
     map_frame: map
-    base_frame: base_link
+    base_frame: base_footprint   # TB3 usa base_footprint como frame raíz
     scan_topic: /scan
+    mode: mapping
 
     # ── Parámetros del mapa ───────────────────────────────────────────────────
     map_update_interval: 5.0

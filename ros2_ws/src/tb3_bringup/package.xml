@@ -2,24 +2,52 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>tb3_bringup</name>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
   <description>
-    Punto de entrada principal del sistema TurtleBot3.
-    Orquesta Gazebo Sim, robot_state_publisher, ros_gz_bridge y RViz2.
-    Contiene launch files, mundos SDF y configuraciones globales.
+    Stack completo de navegación autónoma para TurtleBot3 Waffle.
+    Incluye: Gazebo Harmonic, SLAM Toolbox, NAV2, AMCL, EKF, RViz2.
   </description>
   <maintainer email="juankibenitez57@gmail.com">juanks</maintainer>
   <license>Apache-2.0</license>
 
+  <!-- Base -->
   <depend>rclpy</depend>
   <depend>tb3_description</depend>
   <depend>nav2_minimal_tb3_sim</depend>
+
+  <!-- Gazebo Harmonic -->
   <depend>ros_gz_sim</depend>
   <depend>ros_gz_bridge</depend>
+
+  <!-- Robot description -->
   <depend>robot_state_publisher</depend>
   <depend>joint_state_publisher</depend>
-  <depend>rviz2</depend>
   <depend>xacro</depend>
+
+  <!-- Visualización -->
+  <depend>rviz2</depend>
+
+  <!-- SLAM -->
+  <depend>slam_toolbox</depend>
+
+  <!-- Localización y fusión sensorial -->
+  <depend>robot_localization</depend>
+
+  <!-- NAV2 -->
+  <depend>nav2_bringup</depend>
+  <depend>nav2_bt_navigator</depend>
+  <depend>nav2_controller</depend>
+  <depend>nav2_costmap_2d</depend>
+  <depend>nav2_lifecycle_manager</depend>
+  <depend>nav2_map_server</depend>
+  <depend>nav2_amcl</depend>
+  <depend>nav2_planner</depend>
+  <depend>nav2_navfn_planner</depend>
+  <depend>nav2_behaviors</depend>
+  <depend>nav2_waypoint_follower</depend>
+  <depend>nav2_velocity_smoother</depend>
+  <depend>dwb_core</depend>
+  <depend>dwb_critics</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

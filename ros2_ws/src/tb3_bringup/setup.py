@@ -6,7 +6,7 @@ package_name = 'tb3_bringup'
 
 setup(
     name=package_name,
-    version='0.1.0',
+    version='0.2.0',
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -15,7 +15,7 @@ setup(
         (os.path.join('share', package_name, 'launch'),
             glob('launch/*.launch.py')),
         (os.path.join('share', package_name, 'worlds'),
-            glob('worlds/*.sdf')),
+            glob('worlds/*')),
         (os.path.join('share', package_name, 'config'),
             glob('config/*.yaml')),
         (os.path.join('share', package_name, 'config', 'rviz'),
@@ -27,7 +27,7 @@ setup(
     zip_safe=True,
     maintainer='juanks',
     maintainer_email='juankibenitez57@gmail.com',
-    description='Punto de entrada principal del sistema TurtleBot3.',
+    description='Stack completo de navegación autónoma TurtleBot3.',
     license='Apache-2.0',
     extras_require={'test': ['pytest']},
     entry_points={'console_scripts': []},
