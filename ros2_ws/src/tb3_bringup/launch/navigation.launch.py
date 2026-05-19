@@ -1,44 +1,54 @@
 """
-navigation.launch.py
---------------------
-Stack de navegación autónoma NAV2.
+navigation.launch.py — Launcher completo de navegación autónoma
+---------------------------------------------------------------
 
-Prerrequisito: localization.launch.py corriendo (necesita TF map→odom).
+Lanzamiento único para navegación autónoma con TurtleBot3.
 
-Lifecycle nodes gestionados por lifecycle_manager_navigation:
-  - controller_server  → DWB local planner, genera /cmd_vel
-  - planner_server     → NavFn global planner, genera /plan
-  - behavior_server    → recuperación (spin, backup, wait)
-  - bt_navigator       → coordina todo con Behavior Trees
-  - waypoint_follower  → navegación por lista de waypoints
+Uso:
+  ros2 launch tb3_bringup navigation.launch.py
 
-Flujo de navegación:
-  /goal_pose (RViz "2D Goal Pose")
-    → bt_navigator
-    → planner_server (/plan)
-    → controller_server (/cmd_vel)
-    → bridge → Gazebo DiffDrive → robot se mueve
+  # Con otro mapa:
+  ros2 launch tb3_bringup navigation.launch.py map:=/ruta/mapa.yaml
 
-Verificación:
-  ros2 lifecycle get /planner_server    # active [4]
-  ros2 lifecycle get /controller_server # active [4]
-  ros2 lifecycle get /bt_navigator      # active [4]
-  ros2 topic hz /plan                   # aparece al enviar un goal
-  ros2 topic hz /local_plan             # aparece al navegar
-  ros2 topic echo /cmd_vel              # velocidades al navegar
+Lanza en orden:
+  1. Gazebo Harmonic  (robot + bridge + RSP)
+  2. map_server       (carga house_map.yaml, publica /map)
+  3. amcl             (localiza con /scan, publica TF map→odom)
+  4. lifecycle_manager_localization  (activa map_server + amcl)
+  5. planner_server   (NavFn, genera /plan)
+  6. controller_server (DWB, genera /cmd_vel)
+  7. bt_navigator     (coordina con Behavior Trees)
+  8. behavior_server  (spin, backup, wait)
+  9. waypoint_follower
+ 10. lifecycle_manager_navigation (activa todo el stack NAV2)
+ 11. RViz2 con nav2.rviz
 
-Problemas frecuentes:
-  - "goal rejected": costmap vacío, scan no llega, o map frame no existe
-  - robot no se mueve: /cmd_vel no llega al bridge → ver bridge.yaml
-  - planner falla: mapa no cargado o robot fuera del mapa
-  - controller oscila: reducir PathAlign.scale en nav2_params.yaml
+Workflow:
+  1. Esperar a que Gazebo y RViz carguen (~30 seg)
+  2. Verificar lifecycles activos:
+       ros2 lifecycle get /map_server    # active [4]
+       ros2 lifecycle get /amcl          # active [4]
+       ros2 lifecycle get /bt_navigator  # active [4]
+  3. En RViz → "2D Pose Estimate" → click donde está el robot en el mapa
+     (AMCL inicializa las partículas en esa posición)
+  4. En RViz → "2D Goal Pose" → click en el destino
+     (el robot planifica y navega autónomamente)
+
+Diagnóstico:
+  ros2 topic hz /scan              # ~1.7 Hz (normal con RTF 30%)
+  ros2 topic hz /map               # Transient Local, 1 sola publicación
+  ros2 topic hz /amcl_pose         # ~0.5 Hz al moverse
+  ros2 topic hz /plan              # aparece al recibir goal
+  ros2 topic hz /cmd_vel           # al navegar
+  ros2 run tf2_tools view_frames   # map→odom→base_footprint→base_link→base_scan
 """
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -46,76 +56,88 @@ from launch_ros.actions import Node
 def generate_launch_description():
 
     pkg_bringup = get_package_share_directory('tb3_bringup')
+    launch_dir  = os.path.join(pkg_bringup, 'launch')
 
-    declare_use_sim_time = DeclareLaunchArgument(
-        'use_sim_time', default_value='true')
+    # ── Argumentos ─────────────────────────────────────────────────────────────
+    declare_map = DeclareLaunchArgument(
+        'map',
+        default_value=os.path.join(pkg_bringup, 'maps', 'house_map.yaml'),
+        description='Ruta al YAML del mapa')
 
-    use_sim_time = LaunchConfiguration('use_sim_time')
-    nav2_params  = os.path.join(pkg_bringup, 'config', 'nav2_params.yaml')
+    declare_x = DeclareLaunchArgument('x_pose', default_value='0.0')
+    declare_y = DeclareLaunchArgument('y_pose', default_value='0.0')
 
-    # ── controller_server ──────────────────────────────────────────────────────
-    # DWB (Dynamic Window Based) local planner.
-    # Suscribe: /local_costmap/costmap, /plan, /odom
-    # Publica:  /cmd_vel, /local_plan
-    controller_server = Node(
-        package='nav2_controller',
-        executable='controller_server',
-        name='controller_server',
-        output='screen',
-        parameters=[nav2_params, {'use_sim_time': use_sim_time}])
+    map_file = LaunchConfiguration('map')
+    x_pose   = LaunchConfiguration('x_pose')
+    y_pose   = LaunchConfiguration('y_pose')
 
-    # ── planner_server ─────────────────────────────────────────────────────────
-    # NavFn global planner (Dijkstra o A*).
-    # Suscribe: /map, /global_costmap/costmap
-    # Publica:  /plan (nav_msgs/Path)
+    nav2_params = os.path.join(pkg_bringup, 'config', 'nav2_params.yaml')
+
+    # ── 1. Gazebo + bridge + RSP ───────────────────────────────────────────────
+    gazebo_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(launch_dir, 'gazebo.launch.py')),
+        launch_arguments={
+            'x_pose': x_pose,
+            'y_pose': y_pose,
+            'use_rviz': 'false',
+        }.items())
+
+    # ── 2 + 3 + 4. map_server + amcl + lifecycle_manager_localization ─────────
+    localization_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(launch_dir, 'localization.launch.py')),
+        launch_arguments={'map': map_file}.items())
+
+    # ── 5. planner_server ──────────────────────────────────────────────────────
     planner_server = Node(
         package='nav2_planner',
         executable='planner_server',
         name='planner_server',
         output='screen',
-        parameters=[nav2_params, {'use_sim_time': use_sim_time}])
+        parameters=[nav2_params, {'use_sim_time': True}])
 
-    # ── behavior_server ────────────────────────────────────────────────────────
-    # Recuperaciones automáticas cuando el robot está atascado.
-    # Behaviors: Spin (gira 360°), BackUp (retrocede), Wait (espera)
-    behavior_server = Node(
-        package='nav2_behaviors',
-        executable='behavior_server',
-        name='behavior_server',
+    # ── 6. controller_server ───────────────────────────────────────────────────
+    controller_server = Node(
+        package='nav2_controller',
+        executable='controller_server',
+        name='controller_server',
         output='screen',
-        parameters=[nav2_params, {'use_sim_time': use_sim_time}])
+        parameters=[nav2_params, {'use_sim_time': True}])
 
-    # ── bt_navigator ───────────────────────────────────────────────────────────
-    # Orquestador principal — usa Behavior Trees para coordinar
-    # planner, controller y behaviors.
-    # Recibe: /goal_pose (desde RViz o código)
-    # Llama internamente a planner_server y controller_server
+    # ── 7. bt_navigator ────────────────────────────────────────────────────────
     bt_navigator = Node(
         package='nav2_bt_navigator',
         executable='bt_navigator',
         name='bt_navigator',
         output='screen',
-        parameters=[nav2_params, {'use_sim_time': use_sim_time}])
+        parameters=[nav2_params, {'use_sim_time': True}])
 
-    # ── waypoint_follower ──────────────────────────────────────────────────────
-    # Permite enviar una lista de waypoints para navegación multi-punto.
+    # ── 8. behavior_server ─────────────────────────────────────────────────────
+    behavior_server = Node(
+        package='nav2_behaviors',
+        executable='behavior_server',
+        name='behavior_server',
+        output='screen',
+        parameters=[nav2_params, {'use_sim_time': True}])
+
+    # ── 9. waypoint_follower ───────────────────────────────────────────────────
     waypoint_follower = Node(
         package='nav2_waypoint_follower',
         executable='waypoint_follower',
         name='waypoint_follower',
         output='screen',
-        parameters=[nav2_params, {'use_sim_time': use_sim_time}])
+        parameters=[nav2_params, {'use_sim_time': True}])
 
-    # ── lifecycle_manager_navigation ───────────────────────────────────────────
-    # Activa todos los nodos en orden. Si alguno falla, detiene la cadena.
-    # Orden crítico: controller y planner ANTES de bt_navigator.
-    lifecycle_manager = Node(
+    # ── 10. lifecycle_manager_navigation ───────────────────────────────────────
+    # Orden de activación: controller y planner antes de bt_navigator
+    lifecycle_manager_nav = Node(
         package='nav2_lifecycle_manager',
         executable='lifecycle_manager',
         name='lifecycle_manager_navigation',
         output='screen',
         parameters=[{
-            'use_sim_time': use_sim_time,
+            'use_sim_time': True,
             'autostart': True,
             'node_names': [
                 'controller_server',
@@ -126,12 +148,26 @@ def generate_launch_description():
             ],
         }])
 
+    # ── 11. RViz2 ──────────────────────────────────────────────────────────────
+    rviz = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='screen',
+        arguments=['-d', os.path.join(pkg_bringup, 'rviz', 'nav2.rviz')],
+        parameters=[{'use_sim_time': True}])
+
     return LaunchDescription([
-        declare_use_sim_time,
-        controller_server,
+        declare_map,
+        declare_x,
+        declare_y,
+        gazebo_launch,
+        localization_launch,
         planner_server,
-        behavior_server,
+        controller_server,
         bt_navigator,
+        behavior_server,
         waypoint_follower,
-        lifecycle_manager,
+        lifecycle_manager_nav,
+        rviz,
     ])
