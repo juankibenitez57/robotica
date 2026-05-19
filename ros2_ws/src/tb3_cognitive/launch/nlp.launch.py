@@ -37,8 +37,8 @@ def generate_launch_description():
 
     declare_model = DeclareLaunchArgument(
         'model',
-        default_value='cross-encoder/nli-distilroberta-base',
-        description='Modelo HuggingFace para zero-shot classification')
+        default_value='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
+        description='Modelo sentence-transformers para clasificación semántica')
 
     nlp_node = Node(
         package='tb3_cognitive',
