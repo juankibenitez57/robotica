@@ -1,0 +1,22 @@
+#!/opt/ai-venv/bin/python3
+"""
+Wrapper ejecutable para nlp_intent_node.
+
+Interprete: /opt/ai-venv/bin/python3
+  - numpy 2.x, sklearn 1.8, transformers, torch disponibles en venv
+  - sin conflicto ABI con paquetes apt
+
+Inyecta PYTHONPATH en sys.path para que rclpy, tb3_msgs y
+tb3_cognitive sean visibles (configurados por source install/setup.bash).
+"""
+import sys
+import os
+
+for _p in os.environ.get('PYTHONPATH', '').split(':'):
+    if _p and _p not in sys.path:
+        sys.path.append(_p)
+
+from tb3_cognitive.nlp.intent_node import main
+
+if __name__ == '__main__':
+    main()

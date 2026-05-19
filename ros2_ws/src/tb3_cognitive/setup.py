@@ -22,9 +22,7 @@ setup(
     description='Capa cognitiva TB3',
     license='Apache-2.0',
     extras_require={'test': ['pytest']},
-    entry_points={
-        'console_scripts': [
-            'nlp_intent_node = tb3_cognitive.nlp.intent_node:main',
-        ],
-    },
+    # Wrapper con shebang explícito #!/opt/ai-venv/bin/python3
+    # setup.cfg redirige la instalación a lib/tb3_cognitive/
+    scripts=['scripts/nlp_intent_node'],
 )
