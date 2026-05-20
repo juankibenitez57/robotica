@@ -1,0 +1,17 @@
+#!/opt/ai-venv/bin/python3
+"""
+Wrapper ejecutable para cognitive_fsm_node (Fase 3).
+Usa /opt/ai-venv/bin/python3 para acceder a sentence-transformers, etc.
+Inyecta PYTHONPATH para que rclpy, tb3_msgs y tb3_cognitive sean visibles.
+"""
+import sys
+import os
+
+for _p in os.environ.get('PYTHONPATH', '').split(':'):
+    if _p and _p not in sys.path:
+        sys.path.append(_p)
+
+from tb3_cognitive.fsm.fsm_node import main
+
+if __name__ == '__main__':
+    main()

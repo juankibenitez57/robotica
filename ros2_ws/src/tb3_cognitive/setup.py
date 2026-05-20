@@ -29,5 +29,6 @@ setup(
     scripts=[
         'scripts/nlp_intent_node',
         'scripts/cognitive_agent_node',
+        'scripts/fsm_node',
     ],
 )

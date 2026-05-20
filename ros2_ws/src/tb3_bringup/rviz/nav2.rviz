@@ -394,28 +394,7 @@ Visualization Manager:
       Show Names: false
       Tree:
         map:
-          odom:
-            base_footprint:
-              base_link:
-                base_scan:
-                  {}
-                camera_link:
-                  camera_depth_frame:
-                    camera_depth_optical_frame:
-                      {}
-                  camera_rgb_frame:
-                    camera_rgb_optical_frame:
-                      {}
-                caster_back_left_link:
-                  {}
-                caster_back_right_link:
-                  {}
-                imu_link:
-                  {}
-                wheel_left_link:
-                  {}
-                wheel_right_link:
-                  {}
+          {}
       Update Interval: 0
       Value: true
   Enabled: true
@@ -461,7 +440,7 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Angle: -3.09999942779541
+      Angle: -4.260000228881836
       Class: rviz_default_plugins/TopDownOrtho
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
@@ -471,11 +450,11 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 32.28291702270508
+      Scale: 24.999889373779297
       Target Frame: <Fixed Frame>
       Value: TopDownOrtho (rviz_default_plugins)
-      X: 6.175190448760986
-      Y: 2.926189661026001
+      X: 6.490056037902832
+      Y: -0.11131614446640015
     Saved: ~
 Window Geometry:
   Displays:
@@ -491,5 +470,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 871
-  X: 38
-  Y: 60
+  X: 746
+  Y: 292

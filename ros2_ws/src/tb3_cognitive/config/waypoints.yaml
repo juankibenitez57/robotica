@@ -18,8 +18,8 @@ waypoints:
     y:  0.0
     yaw: 0.0
   cocina:
-    x:  2.5
-    y:  1.0
+    x:  -2.9705
+    y:  -0.7905
     yaw: 0.0
   salon:
     x: -2.0
