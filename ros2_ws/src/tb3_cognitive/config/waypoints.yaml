@@ -1,0 +1,100 @@
+# waypoints.yaml — Posiciones conocidas en el mapa house_map.yaml
+# Coordenadas en frame 'map' (metros)
+#
+# CÓMO OBTENER COORDENADAS REALES:
+#   1. Lanza: ros2 launch tb3_bringup navigation.launch.py
+#   2. En RViz usa "Publish Point" (toolbar) y haz click en el mapa
+#   3. Lee las coordenadas del topic:
+#        ros2 topic echo /clicked_point
+#   4. Actualiza los valores x, y aquí
+#
+# Los valores actuales son aproximados para el mapa house_map.yaml.
+# El robot spawna cerca de (0, 0) en frame map.
+
+waypoints:
+  # ── Español ────────────────────────────────────────────────────────────────
+  origen:
+    x:  0.0
+    y:  0.0
+    yaw: 0.0
+  cocina:
+    x:  2.5
+    y:  1.0
+    yaw: 0.0
+  salon:
+    x: -2.0
+    y:  1.5
+    yaw: 0.0
+  salón:
+    x: -2.0
+    y:  1.5
+    yaw: 0.0
+  habitacion:
+    x:  3.0
+    y: -2.0
+    yaw: 1.57
+  habitación:
+    x:  3.0
+    y: -2.0
+    yaw: 1.57
+  pasillo:
+    x:  0.5
+    y:  2.5
+    yaw: 1.57
+  bano:
+    x: -2.5
+    y: -1.5
+    yaw: 0.0
+  baño:
+    x: -2.5
+    y: -1.5
+    yaw: 0.0
+  entrada:
+    x:  0.0
+    y: -3.0
+    yaw: 3.14
+  comedor:
+    x: -1.0
+    y:  2.5
+    yaw: 0.0
+  garaje:
+    x:  4.0
+    y: -3.0
+    yaw: 0.0
+  # ── English ────────────────────────────────────────────────────────────────
+  origin:
+    x:  0.0
+    y:  0.0
+    yaw: 0.0
+  kitchen:
+    x:  2.5
+    y:  1.0
+    yaw: 0.0
+  living room:
+    x: -2.0
+    y:  1.5
+    yaw: 0.0
+  bedroom:
+    x:  3.0
+    y: -2.0
+    yaw: 1.57
+  hallway:
+    x:  0.5
+    y:  2.5
+    yaw: 1.57
+  bathroom:
+    x: -2.5
+    y: -1.5
+    yaw: 0.0
+  entrance:
+    x:  0.0
+    y: -3.0
+    yaw: 3.14
+  dining room:
+    x: -1.0
+    y:  2.5
+    yaw: 0.0
+  garage:
+    x:  4.0
+    y: -3.0
+    yaw: 0.0
