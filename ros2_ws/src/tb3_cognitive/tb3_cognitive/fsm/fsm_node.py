@@ -336,13 +336,15 @@ class CognitiveFSMNode(Node):
                 return
             if outcome == 'failed':
                 self.get_logger().warn(
-                    f'[EXPLORE] {wp_name} inaccesible — continuando.')
+                    f'[EXPLORE] {wp_name} inaccesible — saltando al siguiente.')
                 with self._fsm_lock:
-                    # Recover from ERROR to continue patrol
+                    # Reset simple ERROR→IDLE→EXPLORING para continuar patrulla.
+                    # NO llamar a _start_recovery() aquí: evita race condition
+                    # con el patrol loop que sigue corriendo en este mismo thread.
                     if self._fsm.state == State.ERROR:
-                        self._fsm.trigger('recovery_start')
-                        self._fsm.trigger('recovery_done')
-                        self._fsm.trigger('explore')
+                        self._fsm.trigger('reset')    # ERROR → IDLE
+                        self._fsm.trigger('explore')  # IDLE  → EXPLORING
+                continue  # salta al siguiente waypoint
 
         with self._fsm_lock:
             if self._fsm.state == State.EXPLORING:
@@ -388,12 +390,12 @@ class CognitiveFSMNode(Node):
                 return
             if outcome == 'failed':
                 self.get_logger().warn(
-                    f'[SEARCH] {wp_name} inaccesible — continuando.')
+                    f'[SEARCH] {wp_name} inaccesible — saltando.')
                 with self._fsm_lock:
                     if self._fsm.state == State.ERROR:
-                        self._fsm.trigger('recovery_start')
-                        self._fsm.trigger('recovery_done')
-                        self._fsm.trigger('search')
+                        self._fsm.trigger('reset')   # ERROR → IDLE
+                        self._fsm.trigger('search')  # IDLE  → SEARCHING
+                continue
 
         with self._fsm_lock:
             if self._fsm.state == State.SEARCHING:
@@ -649,8 +651,13 @@ class CognitiveFSMNode(Node):
             self._publish_status(f'No llegué al destino (status={status}).')
             self._memory.record_failure(f'NAV2 status={status}')
             with self._fsm_lock:
+                prev = self._fsm.state
                 self._fsm.trigger('goal_failed')
-            self._start_recovery()
+            # Recovery automático solo para NAVIGATING — explore/search
+            # manejan sus propios fallos de waypoint inline para evitar
+            # race conditions entre el recovery thread y el patrol loop.
+            if prev == State.NAVIGATING:
+                self._start_recovery()
             self._signal_goal_done('failed')
 
     def _signal_goal_done(self, outcome: str) -> None:
