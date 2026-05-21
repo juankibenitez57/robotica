@@ -220,7 +220,7 @@
     <include>
       <uri>https://fuel.gazebosim.org/1.0/Gambit/models/Mustard%20Bottle</uri>
       <name>mustard_bottle_kitchen</name>
-      <pose>-2.2 -0.79 0 0 0 0</pose>
+      <pose>-2.2 -0.79 0 -1.5708 0 0</pose>
     </include>
 
     <!-- Botella primitiva — living_room (frente al waypoint x=-2.0, y=1.5, yaw=0)
