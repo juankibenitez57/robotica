@@ -37,8 +37,10 @@ Parámetros:
 
 import os
 import yaml
+import math
 import random
 import threading
+import unicodedata
 
 import rclpy
 from rclpy.node import Node
@@ -64,7 +66,7 @@ class CognitiveAgentNode(Node):
             'nav_timeout', 5.0).get_parameter_value().double_value
 
         # ── Waypoints ─────────────────────────────────────────────────────────
-        self._waypoints = self._load_waypoints(waypoints_file)
+        self._waypoints, self._aliases = self._load_waypoints(waypoints_file)
         self.get_logger().info(
             f'Waypoints cargados: {list(self._waypoints.keys())}')
 
@@ -95,15 +97,23 @@ class CognitiveAgentNode(Node):
 
     # ── Carga de waypoints ────────────────────────────────────────────────────
 
-    def _load_waypoints(self, filepath: str) -> dict:
+    def _load_waypoints(self, filepath: str) -> tuple[dict, dict]:
         if not filepath or not os.path.exists(filepath):
             self.get_logger().warn(
                 f'waypoints_file no existe: {filepath!r}\n'
                 'Edita config/waypoints.yaml y pasa la ruta al launcher.')
-            return {}
+            return {}, {}
         with open(filepath) as f:
-            data = yaml.safe_load(f)
-        return data.get('waypoints', {})
+            data = yaml.safe_load(f) or {}
+        waypoints = data.get('waypoints', {})
+        aliases = {
+            self._normalize_location(alias): self._normalize_location(target)
+            for alias, target in data.get('aliases', {}).items()
+        }
+        for name in waypoints:
+            normalized = self._normalize_location(name)
+            aliases.setdefault(normalized, normalized)
+        return waypoints, aliases
 
     # ── Callback principal ────────────────────────────────────────────────────
 
@@ -137,8 +147,8 @@ class CognitiveAgentNode(Node):
     # ── Implementaciones ROS2 de cada acción ──────────────────────────────────
 
     def navigate_to_location(self, target: str) -> str:
-        waypoint = self._find_waypoint(target)
-        if waypoint is None:
+        resolved = self._find_waypoint(target)
+        if resolved is None:
             available = list(self._waypoints.keys())
             return (f'Waypoint desconocido: {target!r}. '
                     f'Disponibles: {available}')
@@ -148,20 +158,23 @@ class CognitiveAgentNode(Node):
             return ('NAV2 no responde. '
                     'Lanza navigation.launch.py antes del agente.')
 
+        waypoint_name, waypoint = resolved
         x = float(waypoint['x'])
         y = float(waypoint['y'])
+        yaw = float(waypoint.get('yaw', 0.0))
 
         goal = NavigateToPose.Goal()
         goal.pose.header.frame_id = 'map'
         goal.pose.header.stamp = self.get_clock().now().to_msg()
         goal.pose.pose.position.x = x
         goal.pose.pose.position.y = y
-        goal.pose.pose.orientation.w = 1.0
+        goal.pose.pose.orientation.z = math.sin(yaw / 2.0)
+        goal.pose.pose.orientation.w = math.cos(yaw / 2.0)
 
         self._nav_client.send_goal_async(goal)
         self.get_logger().info(
-            f'NAV2 goal → {target} ({x:.2f}, {y:.2f})')
-        return f'Navegando a {target!r} ({x:.2f}, {y:.2f})'
+            f'NAV2 goal → {waypoint_name} ({x:.2f}, {y:.2f})')
+        return f'Navegando a {target!r} → {waypoint_name} ({x:.2f}, {y:.2f})'
 
     def stop_robot(self) -> str:
         twist = Twist()
@@ -229,15 +242,27 @@ class CognitiveAgentNode(Node):
 
     # ── Utilidades ────────────────────────────────────────────────────────────
 
-    def _find_waypoint(self, target: str) -> dict | None:
-        t = target.lower().strip()
-        if t in self._waypoints:
-            return self._waypoints[t]
-        # Búsqueda parcial: "cocina" matchea "la cocina"
-        for key, val in self._waypoints.items():
-            if t in key or key in t:
-                return val
+    def _find_waypoint(self, target: str) -> tuple[str, dict] | None:
+        t = self._normalize_location(target)
+        if t in self._aliases:
+            waypoint_name = self._aliases[t]
+            waypoint = self._waypoints.get(waypoint_name)
+            if waypoint is not None:
+                return waypoint_name, waypoint
+        for alias, waypoint_name in self._aliases.items():
+            if alias and alias in t:
+                waypoint = self._waypoints.get(waypoint_name)
+                if waypoint is not None:
+                    return waypoint_name, waypoint
         return None
+
+    def _normalize_location(self, value: str) -> str:
+        text = str(value or '').strip().lower().replace('_', ' ')
+        text = ''.join(
+            c for c in unicodedata.normalize('NFD', text)
+            if unicodedata.category(c) != 'Mn'
+        )
+        return ' '.join(text.split()).replace(' ', '_')
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
