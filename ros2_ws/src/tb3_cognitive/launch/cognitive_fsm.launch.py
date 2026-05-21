@@ -46,6 +46,11 @@ def generate_launch_description():
         default_value=default_waypoints,
         description='Ruta al YAML con coordenadas de waypoints')
 
+    declare_max_abs_coordinate = DeclareLaunchArgument(
+        'max_abs_coordinate',
+        default_value='20.0',
+        description='Límite preventivo absoluto para x/y en frame map')
+
     declare_model = DeclareLaunchArgument(
         'model',
         default_value='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
@@ -73,10 +78,12 @@ def generate_launch_description():
         parameters=[{
             'waypoints_file': LaunchConfiguration('waypoints_file'),
             'nav_timeout':    5.0,
+            'max_abs_coordinate': LaunchConfiguration('max_abs_coordinate'),
         }])
 
     return LaunchDescription([
         declare_waypoints,
+        declare_max_abs_coordinate,
         declare_model,
         nlp_node,
         fsm_node,

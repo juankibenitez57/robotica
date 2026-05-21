@@ -7,14 +7,17 @@ Estados:
   EXPLORING   — navegando a un punto aleatorio de exploración
   SEARCHING   — buscando un objeto (navega al origen + gira)
   APPROACHING — acercándose a un objetivo detectado (Fase 4)
+  STOPPED     — parada explícita/cancelación de seguridad
   REPORTING   — publicando estado del sistema
-  ERROR       — goal fallido, espera reset
+  ERROR       — goal fallido
+  RECOVERY    — limpieza/reset de navegación tras fallo
 
 Eventos válidos:
   navigate, explore, search, approach, report  — inician una acción desde IDLE
   goal_succeeded, goal_failed, goal_cancelled  — resultado de NAV2
   stop                                         — detiene cualquier acción activa
-  reset                                        — sale del estado ERROR
+  recovery_start/recovery_done                 — recuperación tras ERROR
+  reset                                        — salida manual de ERROR/STOPPED
   done                                         — termina REPORTING
 """
 
@@ -28,8 +31,10 @@ class State(str, Enum):
     EXPLORING   = 'EXPLORING'
     SEARCHING   = 'SEARCHING'
     APPROACHING = 'APPROACHING'
+    STOPPED     = 'STOPPED'
     REPORTING   = 'REPORTING'
     ERROR       = 'ERROR'
+    RECOVERY    = 'RECOVERY'
 
 
 _TRANSITIONS: Dict[Tuple[State, str], State] = {
@@ -42,25 +47,31 @@ _TRANSITIONS: Dict[Tuple[State, str], State] = {
     # Resultado de NAV2
     (State.NAVIGATING,  'goal_succeeded'):  State.IDLE,
     (State.NAVIGATING,  'goal_failed'):     State.ERROR,
-    (State.NAVIGATING,  'goal_cancelled'):  State.IDLE,
+    (State.NAVIGATING,  'goal_cancelled'):  State.STOPPED,
     (State.EXPLORING,   'goal_succeeded'):  State.IDLE,
     (State.EXPLORING,   'goal_failed'):     State.ERROR,
-    (State.EXPLORING,   'goal_cancelled'):  State.IDLE,
+    (State.EXPLORING,   'goal_cancelled'):  State.STOPPED,
     (State.SEARCHING,   'goal_succeeded'):  State.IDLE,
     (State.SEARCHING,   'goal_failed'):     State.ERROR,
-    (State.SEARCHING,   'goal_cancelled'):  State.IDLE,
+    (State.SEARCHING,   'goal_cancelled'):  State.STOPPED,
     (State.APPROACHING, 'goal_succeeded'):  State.IDLE,
     (State.APPROACHING, 'goal_failed'):     State.ERROR,
-    (State.APPROACHING, 'goal_cancelled'):  State.IDLE,
+    (State.APPROACHING, 'goal_cancelled'):  State.STOPPED,
     (State.REPORTING,   'done'):            State.IDLE,
     # Stop desde cualquier estado activo
-    (State.NAVIGATING,  'stop'):            State.IDLE,
-    (State.EXPLORING,   'stop'):            State.IDLE,
-    (State.SEARCHING,   'stop'):            State.IDLE,
-    (State.APPROACHING, 'stop'):            State.IDLE,
-    # Error → reset
+    (State.NAVIGATING,  'stop'):            State.STOPPED,
+    (State.EXPLORING,   'stop'):            State.STOPPED,
+    (State.SEARCHING,   'stop'):            State.STOPPED,
+    (State.APPROACHING, 'stop'):            State.STOPPED,
+    (State.RECOVERY,    'stop'):            State.STOPPED,
+    # Estados terminales/controlados
+    (State.STOPPED, 'reset'):               State.IDLE,
+    (State.STOPPED, 'stop'):                State.STOPPED,
     (State.ERROR, 'reset'):                 State.IDLE,
-    (State.ERROR, 'stop'):                  State.IDLE,
+    (State.ERROR, 'stop'):                  State.STOPPED,
+    (State.ERROR, 'recovery_start'):        State.RECOVERY,
+    (State.RECOVERY, 'recovery_done'):      State.IDLE,
+    (State.RECOVERY, 'recovery_failed'):    State.ERROR,
 }
 
 
@@ -76,7 +87,7 @@ class RobotFSM:
         return self._state
 
     def is_busy(self) -> bool:
-        return self._state not in (State.IDLE, State.ERROR)
+        return self._state not in (State.IDLE, State.ERROR, State.STOPPED)
 
     def can_trigger(self, event: str) -> bool:
         return (self._state, event) in _TRANSITIONS

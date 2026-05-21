@@ -1,4 +1,4 @@
-# waypoints.yaml — Posiciones conocidas en el mapa house_map.yaml
+# waypoints.yaml — Posiciones semánticas conocidas en el mapa house_map.yaml
 # Coordenadas en frame 'map' (metros)
 #
 # CÓMO OBTENER COORDENADAS REALES:
@@ -8,69 +8,59 @@
 #        ros2 topic echo /clicked_point
 #   4. Actualiza los valores x, y aquí
 #
-# Los valores actuales son aproximados para el mapa house_map.yaml.
-# El robot spawna cerca de (0, 0) en frame map.
+# Separación profesional:
+#   aliases   → lenguaje humano/NLP
+#   waypoints → representación espacial interna
+#
+# El NLP puede publicar target='cocina'. La FSM normaliza:
+#   cocina → kitchen → coordenadas reales en map.
+#
+# IMPORTANTE:
+#   No introduzcas coordenadas inventadas tipo (50, 30). En este mapa local
+#   cualquier abs(x) o abs(y) mayor de 20 m se considera sospechoso.
+
+metadata:
+  frame_id: map
+  max_abs_coordinate: 20.0
+
+aliases:
+  origen: origin
+  inicio: origin
+  base: origin
+  cocina: kitchen
+  kitchen: kitchen
+  salon: living_room
+  salón: living_room
+  sala: living_room
+  living room: living_room
+  living_room: living_room
+  habitacion: bedroom
+  habitación: bedroom
+  dormitorio: bedroom
+  bedroom: bedroom
+  pasillo: hallway
+  hallway: hallway
+  bano: bathroom
+  baño: bathroom
+  bathroom: bathroom
+  entrada: entrance
+  entrance: entrance
+  comedor: dining_room
+  dining room: dining_room
+  dining_room: dining_room
+  garaje: garage
+  garage: garage
 
 waypoints:
-  # ── Español ────────────────────────────────────────────────────────────────
-  origen:
-    x:  0.0
-    y:  0.0
-    yaw: 0.0
-  cocina:
-    x:  -2.9705
-    y:  -0.7905
-    yaw: 0.0
-  salon:
-    x: -2.0
-    y:  1.5
-    yaw: 0.0
-  salón:
-    x: -2.0
-    y:  1.5
-    yaw: 0.0
-  habitacion:
-    x:  3.0
-    y: -2.0
-    yaw: 1.57
-  habitación:
-    x:  3.0
-    y: -2.0
-    yaw: 1.57
-  pasillo:
-    x:  0.5
-    y:  2.5
-    yaw: 1.57
-  bano:
-    x: -2.5
-    y: -1.5
-    yaw: 0.0
-  baño:
-    x: -2.5
-    y: -1.5
-    yaw: 0.0
-  entrada:
-    x:  0.0
-    y: -3.0
-    yaw: 3.14
-  comedor:
-    x: -1.0
-    y:  2.5
-    yaw: 0.0
-  garaje:
-    x:  4.0
-    y: -3.0
-    yaw: 0.0
-  # ── English ────────────────────────────────────────────────────────────────
   origin:
     x:  0.0
     y:  0.0
     yaw: 0.0
   kitchen:
-    x:  2.5
-    y:  1.0
+    x:  -2.9705
+    y:  -0.7905
     yaw: 0.0
-  living room:
+  living_room:
     x: -2.0
     y:  1.5
     yaw: 0.0
@@ -90,7 +80,7 @@ waypoints:
     x:  0.0
     y: -3.0
     yaw: 3.14
-  dining room:
+  dining_room:
     x: -1.0
     y:  2.5
     yaw: 0.0

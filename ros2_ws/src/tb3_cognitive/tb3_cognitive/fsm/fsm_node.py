@@ -21,8 +21,10 @@ Parámetros:
 
 import os
 import yaml
+import math
 import random
 import threading
+import unicodedata
 
 import rclpy
 from rclpy.node import Node
@@ -32,6 +34,7 @@ from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String
 from nav2_msgs.action import NavigateToPose
+from nav2_msgs.srv import ClearEntireCostmap
 from tb3_msgs.msg import CognitiveCommand
 
 from .states import RobotFSM, State
@@ -47,11 +50,15 @@ class CognitiveFSMNode(Node):
             'waypoints_file', '').get_parameter_value().string_value
         self._nav_timeout = self.declare_parameter(
             'nav_timeout', 5.0).get_parameter_value().double_value
+        self._max_abs_coordinate = self.declare_parameter(
+            'max_abs_coordinate', 20.0).get_parameter_value().double_value
 
         # ── Waypoints ─────────────────────────────────────────────────────────
-        self._waypoints = self._load_waypoints(waypoints_file)
+        self._waypoints, self._aliases = self._load_waypoints(waypoints_file)
         self.get_logger().info(
             f'Waypoints cargados: {list(self._waypoints.keys())}')
+        self.get_logger().info(
+            f'Aliases semánticos cargados: {len(self._aliases)}')
 
         # ── FSM ───────────────────────────────────────────────────────────────
         self._fsm = RobotFSM(on_transition=self._on_state_change)
@@ -67,6 +74,10 @@ class CognitiveFSMNode(Node):
         # ── NAV2 action client ────────────────────────────────────────────────
         self._nav_client = ActionClient(
             self, NavigateToPose, 'navigate_to_pose')
+        self._global_clear_client = self.create_client(
+            ClearEntireCostmap, '/global_costmap/clear_entirely_global_costmap')
+        self._local_clear_client = self.create_client(
+            ClearEntireCostmap, '/local_costmap/clear_entirely_local_costmap')
 
         # ── cmd_vel para stop ─────────────────────────────────────────────────
         self._cmd_vel_pub = self.create_publisher(
@@ -87,14 +98,38 @@ class CognitiveFSMNode(Node):
 
     # ── Carga de waypoints ────────────────────────────────────────────────────
 
-    def _load_waypoints(self, filepath: str) -> dict:
+    def _load_waypoints(self, filepath: str) -> tuple[dict, dict]:
         if not filepath or not os.path.exists(filepath):
             self.get_logger().warn(
                 f'waypoints_file no existe: {filepath!r}')
-            return {}
+            return {}, {}
         with open(filepath) as f:
-            data = yaml.safe_load(f)
-        return data.get('waypoints', {})
+            data = yaml.safe_load(f) or {}
+
+        metadata = data.get('metadata', {})
+        if 'max_abs_coordinate' in metadata:
+            self._max_abs_coordinate = float(metadata['max_abs_coordinate'])
+
+        waypoints = data.get('waypoints', {})
+        aliases = {
+            self._normalize_location(alias): self._normalize_location(target)
+            for alias, target in data.get('aliases', {}).items()
+        }
+        for name in waypoints:
+            normalized = self._normalize_location(name)
+            aliases.setdefault(normalized, normalized)
+
+        valid_waypoints = {}
+        for name, waypoint in waypoints.items():
+            normalized_name = self._normalize_location(name)
+            ok, reason = self._validate_waypoint(normalized_name, waypoint)
+            if not ok:
+                self.get_logger().error(
+                    f'Waypoint inválido descartado: {name!r} — {reason}')
+                continue
+            valid_waypoints[normalized_name] = waypoint
+
+        return valid_waypoints, aliases
 
     # ── Callback de comando ───────────────────────────────────────────────────
 
@@ -108,6 +143,29 @@ class CognitiveFSMNode(Node):
             if msg.action == 'stop':
                 self._handle_stop()
                 return
+
+            if msg.action == 'reset':
+                if self._fsm.trigger('reset'):
+                    self._publish_status('FSM reseteada a IDLE.')
+                else:
+                    self._publish_status(
+                        f'Reset ignorado desde {self._fsm.state.value}.')
+                return
+
+            if self._fsm.state == State.ERROR:
+                self._publish_status(
+                    'FSM en ERROR: ejecutando recovery antes del nuevo comando.')
+                threading.Thread(
+                    target=self._recover_then_dispatch,
+                    args=(msg.action, msg.target),
+                    daemon=True,
+                ).start()
+                return
+
+            if self._fsm.state == State.STOPPED:
+                if not self._fsm.trigger('reset'):
+                    self._publish_status('No pude salir de STOPPED.')
+                    return
 
             # Si está ocupado, rechaza el nuevo comando
             if self._fsm.is_busy():
@@ -148,8 +206,8 @@ class CognitiveFSMNode(Node):
     # ── Implementaciones ─────────────────────────────────────────────────────
 
     def _do_navigate(self, target: str) -> None:
-        waypoint = self._find_waypoint(target)
-        if waypoint is None:
+        resolved = self._find_waypoint(target)
+        if resolved is None:
             available = list(self._waypoints.keys())
             msg = (f'Waypoint desconocido: {target!r}. '
                    f'Disponibles: {available}')
@@ -157,11 +215,29 @@ class CognitiveFSMNode(Node):
             self._publish_status(msg)
             with self._fsm_lock:
                 self._fsm.trigger('goal_failed')
+            self._start_recovery()
             return
 
+        waypoint_name, waypoint = resolved
         x, y = float(waypoint['x']), float(waypoint['y'])
-        self._publish_status(f'Navegando a {target!r} ({x:.2f}, {y:.2f})')
-        self._send_nav_goal(x, y, label=target)
+        yaw = float(waypoint.get('yaw', 0.0))
+        ok, reason = self._validate_waypoint(waypoint_name, waypoint)
+        if not ok:
+            msg = f'Waypoint rechazado preventivamente: {waypoint_name} — {reason}'
+            self.get_logger().error(msg)
+            self._publish_status(msg)
+            with self._fsm_lock:
+                self._fsm.trigger('goal_failed')
+            self._start_recovery()
+            return
+
+        self.get_logger().info(
+            f'Grounding: target={target!r} → waypoint={waypoint_name!r}')
+        self.get_logger().info(
+            f'Coordinates: ({x:.2f}, {y:.2f}, yaw={yaw:.2f})')
+        self._publish_status(
+            f'Navegando a {target!r} → {waypoint_name} ({x:.2f}, {y:.2f})')
+        self._send_nav_goal(x, y, yaw=yaw, label=waypoint_name)
 
     def _do_explore(self) -> None:
         points = [
@@ -208,12 +284,75 @@ class CognitiveFSMNode(Node):
             self._cmd_vel_pub.publish(twist)
 
         self._fsm.trigger('stop')
-        self._publish_status('Robot detenido.')
+        if self._fsm.state == State.STOPPED:
+            self._fsm.trigger('reset')
+        self._publish_status('Robot detenido. FSM lista en IDLE.')
         self.get_logger().info('Robot detenido (FSM → IDLE)')
+
+    def _recover_then_dispatch(self, action: str, target: str) -> None:
+        if not self._do_recovery():
+            return
+        with self._fsm_lock:
+            if not self._fsm.trigger(action):
+                self.get_logger().warn(
+                    f'Transición no válida tras recovery: '
+                    f'{self._fsm.state.value} + {action!r}')
+                return
+        self._dispatch(action, target)
+
+    def _start_recovery(self) -> None:
+        threading.Thread(target=self._do_recovery, daemon=True).start()
+
+    def _do_recovery(self) -> bool:
+        with self._fsm_lock:
+            if self._fsm.state == State.RECOVERY:
+                return False
+            if self._fsm.state != State.ERROR:
+                return True
+            if not self._fsm.trigger('recovery_start'):
+                return False
+
+        self._publish_status('Recovery: limpiando costmaps NAV2.')
+        self.get_logger().warn('Recovery: clear_costmaps → reset_navigation')
+
+        ok = True
+        for name, client in (
+            ('global_costmap', self._global_clear_client),
+            ('local_costmap', self._local_clear_client),
+        ):
+            if not client.wait_for_service(timeout_sec=1.0):
+                self.get_logger().warn(
+                    f'Recovery: servicio {name} no disponible.')
+                ok = False
+                continue
+            future = client.call_async(ClearEntireCostmap.Request())
+            event = threading.Event()
+            future.add_done_callback(lambda _: event.set())
+            if not event.wait(timeout=2.0):
+                self.get_logger().warn(f'Recovery: timeout limpiando {name}.')
+                ok = False
+            elif future.exception() is not None:
+                self.get_logger().warn(
+                    f'Recovery: fallo limpiando {name}: {future.exception()}')
+                ok = False
+            else:
+                self.get_logger().info(f'Recovery: {name} limpio.')
+
+        with self._fsm_lock:
+            self._fsm.trigger('recovery_done' if ok else 'recovery_failed')
+
+        if ok:
+            self._publish_status('Recovery completado. FSM en IDLE.')
+        else:
+            self._publish_status(
+                'Recovery incompleto. Revisa servicios de costmap NAV2.')
+        return ok
 
     # ── NAV2 goal tracking ────────────────────────────────────────────────────
 
-    def _send_nav_goal(self, x: float, y: float, label: str = '') -> None:
+    def _send_nav_goal(
+        self, x: float, y: float, yaw: float = 0.0, label: str = ''
+    ) -> None:
         if not self._nav_client.wait_for_server(
                 timeout_sec=self._nav_timeout):
             msg = 'NAV2 no responde. Lanza navigation.launch.py primero.'
@@ -221,6 +360,7 @@ class CognitiveFSMNode(Node):
             self._publish_status(msg)
             with self._fsm_lock:
                 self._fsm.trigger('goal_failed')
+            self._start_recovery()
             return
 
         goal = NavigateToPose.Goal()
@@ -228,9 +368,11 @@ class CognitiveFSMNode(Node):
         goal.pose.header.stamp = self.get_clock().now().to_msg()
         goal.pose.pose.position.x = x
         goal.pose.pose.position.y = y
-        goal.pose.pose.orientation.w = 1.0
+        goal.pose.pose.orientation.z = math.sin(yaw / 2.0)
+        goal.pose.pose.orientation.w = math.cos(yaw / 2.0)
 
         self.get_logger().info(f'NAV2 goal → {label} ({x:.2f}, {y:.2f})')
+        self.get_logger().info('Planner: active')
 
         send_future = self._nav_client.send_goal_async(goal)
         send_future.add_done_callback(self._goal_response_cb)
@@ -242,6 +384,7 @@ class CognitiveFSMNode(Node):
             self._publish_status('Goal rechazado por NAV2.')
             with self._fsm_lock:
                 self._fsm.trigger('goal_failed')
+            self._start_recovery()
             return
 
         self._current_goal_handle = goal_handle
@@ -269,6 +412,7 @@ class CognitiveFSMNode(Node):
             self._publish_status(f'No pude llegar al destino (status={status}).')
             with self._fsm_lock:
                 self._fsm.trigger('goal_failed')
+            self._start_recovery()
 
     # ── FSM callback ─────────────────────────────────────────────────────────
 
@@ -279,14 +423,56 @@ class CognitiveFSMNode(Node):
 
     # ── Utilidades ────────────────────────────────────────────────────────────
 
-    def _find_waypoint(self, target: str) -> dict | None:
-        t = target.lower().strip()
-        if t in self._waypoints:
-            return self._waypoints[t]
-        for key, val in self._waypoints.items():
-            if t in key or key in t:
-                return val
+    def _find_waypoint(self, target: str) -> tuple[str, dict] | None:
+        t = self._normalize_location(target)
+        if t in self._aliases:
+            waypoint_name = self._aliases[t]
+            waypoint = self._waypoints.get(waypoint_name)
+            if waypoint is not None:
+                return waypoint_name, waypoint
+
+        for alias, waypoint_name in self._aliases.items():
+            if alias and alias in t:
+                waypoint = self._waypoints.get(waypoint_name)
+                if waypoint is not None:
+                    return waypoint_name, waypoint
         return None
+
+    def _normalize_location(self, value: str) -> str:
+        text = str(value or '').strip().lower().replace('_', ' ')
+        text = ''.join(
+            c for c in unicodedata.normalize('NFD', text)
+            if unicodedata.category(c) != 'Mn'
+        )
+        return ' '.join(text.split()).replace(' ', '_')
+
+    def _validate_waypoint(self, name: str, waypoint: dict) -> tuple[bool, str]:
+        if not isinstance(waypoint, dict):
+            return False, 'el waypoint no es un diccionario YAML'
+        for field in ('x', 'y'):
+            if field not in waypoint:
+                return False, f'falta campo {field!r}'
+            try:
+                value = float(waypoint[field])
+            except (TypeError, ValueError):
+                return False, f'{field} no es numérico: {waypoint[field]!r}'
+            if not math.isfinite(value):
+                return False, f'{field} no es finito: {value!r}'
+            if abs(value) > self._max_abs_coordinate:
+                return (
+                    False,
+                    f'{field}={value:.2f} excede límite '
+                    f'±{self._max_abs_coordinate:.1f} m',
+                )
+        try:
+            yaw = float(waypoint.get('yaw', 0.0))
+        except (TypeError, ValueError):
+            return False, f'yaw no es numérico: {waypoint.get("yaw")!r}'
+        if not math.isfinite(yaw):
+            return False, f'yaw no es finito: {yaw!r}'
+        if not name:
+            return False, 'nombre de waypoint vacío'
+        return True, 'ok'
 
     def _publish_status(self, text: str) -> None:
         msg = String()
