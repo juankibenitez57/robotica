@@ -22,3 +22,8 @@ __pycache__/
 .vscode/
 *.swp
 *~
+
+# Modelos ML (se descargan automáticamente en tiempo de ejecución)
+*.pt
+*.onnx
+*.engine

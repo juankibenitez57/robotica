@@ -1,0 +1,335 @@
+# nav2_params.yaml
+# ----------------
+# Stack NAV2 para TurtleBot3 Waffle en ROS2 Jazzy.
+# Contiene: bt_navigator, controller_server (DWB), planner_server (NavFn),
+#           costmaps global/local, behavior_server, waypoint_follower,
+#           velocity_smoother, map_server, map_saver.
+#
+# AMCL → config/amcl.yaml  (cargado por localization.launch.py)
+#
+# TB3 Waffle: max_vel_x=0.26 m/s  max_vel_theta=1.82 rad/s
+
+# ════════════════════════════════════════════════════════════════════════════
+# BT NAVIGATOR — Behavior Tree Navigator
+# Coordina planner y controller mediante árboles de comportamiento
+# ════════════════════════════════════════════════════════════════════════════
+bt_navigator:
+  ros__parameters:
+    use_sim_time: true
+    global_frame: map
+    robot_base_frame: base_footprint
+    odom_topic: /odom
+    bt_loop_duration: 10
+    default_server_timeout: 20
+    wait_for_service_timeout: 1000
+    action_server_result_timeout: 900.0
+    navigators: [navigate_to_pose, navigate_through_poses]
+    navigate_to_pose:
+      plugin: nav2_bt_navigator::NavigateToPoseNavigator
+    navigate_through_poses:
+      plugin: nav2_bt_navigator::NavigateThroughPosesNavigator
+    error_code_names:
+      - compute_path_error_code
+      - follow_path_error_code
+
+# ════════════════════════════════════════════════════════════════════════════
+# CONTROLLER SERVER — Planner local (DWB)
+# DWB = Dynamic Window Based local planner
+# Genera velocidades /cmd_vel para seguir el path global
+# ════════════════════════════════════════════════════════════════════════════
+controller_server:
+  ros__parameters:
+    use_sim_time: true
+    controller_frequency: 20.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    progress_checker_plugin: progress_checker
+    goal_checker_plugins: [general_goal_checker]
+    controller_plugins: [FollowPath]
+
+    progress_checker:
+      plugin: nav2_controller::SimpleProgressChecker
+      required_movement_radius: 0.5
+      movement_time_allowance: 10.0
+
+    general_goal_checker:
+      stateful: true
+      plugin: nav2_controller::SimpleGoalChecker
+      xy_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.25
+
+    FollowPath:
+      plugin: dwb_core::DWBLocalPlanner
+      debug_trajectory_details: true
+
+      # ── Límites cinemáticos TB3 Waffle ────────────────────────────────────
+      min_vel_x: 0.0
+      min_vel_y: 0.0
+      max_vel_x: 0.22
+      max_vel_y: 0.0
+      max_vel_theta: 1.0
+      min_speed_xy: 0.0
+      max_speed_xy: 0.22
+      min_speed_theta: 0.0
+
+      # ── Aceleración / deceleración ────────────────────────────────────────
+      acc_lim_x: 2.5
+      acc_lim_y: 0.0
+      acc_lim_theta: 3.2
+      decel_lim_x: -2.5
+      decel_lim_y: 0.0
+      decel_lim_theta: -3.2
+
+      # ── Muestreo de velocidades ───────────────────────────────────────────
+      vx_samples: 20
+      vy_samples: 5
+      vtheta_samples: 20
+
+      # ── Simulación de trayectorias ────────────────────────────────────────
+      sim_time: 1.7              # tiempo de predicción (s)
+      linear_granularity: 0.05  # resolución lineal
+      angular_granularity: 0.025
+
+      # ── Tolerancias ───────────────────────────────────────────────────────
+      transform_tolerance: 0.2
+      xy_goal_tolerance: 0.25
+      trans_stopped_velocity: 0.25
+      short_circuit_trajectory_evaluation: true
+      stateful: true
+
+      # ── Críticos DWB (puntuación de trayectorias) ─────────────────────────
+      # Cada crítico puntúa cada trayectoria candidata.
+      # La trayectoria con mayor puntuación total se ejecuta.
+      critics:
+        - RotateToGoal    # gira hacia el objetivo si está cerca
+        - Oscillation     # penaliza oscilaciones
+        - BaseObstacle    # penaliza chocar con obstáculos
+        - GoalAlign       # premia trayectorias alineadas al goal
+        - PathAlign       # premia trayectorias alineadas al path global
+        - PathDist        # penaliza desviarse del path global
+        - GoalDist        # premia acercarse al goal
+
+      BaseObstacle.scale: 0.02
+      PathAlign.scale: 32.0
+      PathAlign.forward_point_distance: 0.1
+      GoalAlign.scale: 24.0
+      GoalAlign.forward_point_distance: 0.1
+      PathDist.scale: 32.0
+      GoalDist.scale: 24.0
+      RotateToGoal.scale: 32.0
+      RotateToGoal.slowing_factor: 5.0
+      RotateToGoal.lookahead_time: -1.0
+
+# ════════════════════════════════════════════════════════════════════════════
+# LOCAL COSTMAP — Ventana local alrededor del robot
+# Usa /scan para detectar obstáculos cercanos en tiempo real
+# ════════════════════════════════════════════════════════════════════════════
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: true
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_footprint
+      rolling_window: true
+      width: 3
+      height: 3
+      resolution: 0.05          # 5 cm por celda
+      robot_radius: 0.22        # radio del TB3 Waffle
+      plugins: [voxel_layer, inflation_layer]
+
+      # Obstacle layer: detecta obstáculos desde /scan
+      voxel_layer:
+        plugin: nav2_costmap_2d::VoxelLayer
+        enabled: true
+        publish_voxel_map: true
+        origin_z: 0.0
+        z_resolution: 0.05
+        z_voxels: 16
+        max_obstacle_height: 2.0
+        mark_threshold: 0
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: LaserScan
+          raytrace_max_range: 3.0    # máximo para borrar celdas
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5    # máximo para marcar obstáculos
+          obstacle_min_range: 0.0
+
+      # Inflation layer: infla obstáculos para mantener margen de seguridad
+      # inflation_radius: zona total de influencia
+      # cost_scaling_factor: pendiente de decaimiento del coste
+      inflation_layer:
+        plugin: nav2_costmap_2d::InflationLayer
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55    # mayor que robot_radius
+
+      always_send_full_costmap: true
+
+# ════════════════════════════════════════════════════════════════════════════
+# GLOBAL COSTMAP — Mapa completo del entorno
+# Usa el /map de SLAM/map_server + /scan para obstáculos estáticos y dinámicos
+# ════════════════════════════════════════════════════════════════════════════
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: true
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_footprint
+      robot_radius: 0.22
+      resolution: 0.05
+      track_unknown_space: true
+      plugins: [static_layer, obstacle_layer, inflation_layer]
+
+      # Static layer: carga el mapa estático (paredes, obstáculos fijos)
+      static_layer:
+        plugin: nav2_costmap_2d::StaticLayer
+        map_subscribe_transient_local: true
+
+      # Obstacle layer: actualiza con datos del LiDAR (obstáculos dinámicos)
+      obstacle_layer:
+        plugin: nav2_costmap_2d::ObstacleLayer
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: LaserScan
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+
+      inflation_layer:
+        plugin: nav2_costmap_2d::InflationLayer
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
+
+      always_send_full_costmap: true
+
+# ════════════════════════════════════════════════════════════════════════════
+# PLANNER SERVER — Planificador global (NavFn / Dijkstra)
+# Calcula el camino óptimo desde la posición actual al goal
+# ════════════════════════════════════════════════════════════════════════════
+planner_server:
+  ros__parameters:
+    use_sim_time: true
+    expected_planner_frequency: 20.0
+    planners: [GridBased]
+
+    GridBased:
+      plugin: nav2_navfn_planner::NavfnPlanner
+      # tolerance: distancia máxima al goal para considerarlo alcanzado
+      tolerance: 0.5
+      # use_astar: true=A* (más rápido), false=Dijkstra (más óptimo)
+      use_astar: false
+      allow_unknown: true    # permite planificar por zonas sin explorar
+
+# ════════════════════════════════════════════════════════════════════════════
+# SMOOTHER SERVER — Suaviza el path global
+# ════════════════════════════════════════════════════════════════════════════
+smoother_server:
+  ros__parameters:
+    use_sim_time: true
+    smoother_plugins: [simple_smoother]
+    simple_smoother:
+      plugin: nav2_smoother::SimpleSmoother
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: true
+
+# ════════════════════════════════════════════════════════════════════════════
+# BEHAVIOR SERVER — Recuperación automática
+# Se activa cuando el robot está atascado
+# ════════════════════════════════════════════════════════════════════════════
+behavior_server:
+  ros__parameters:
+    use_sim_time: true
+    local_costmap_topic: local_costmap/costmap_raw
+    global_costmap_topic: global_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: [spin, backup, drive_on_heading, assisted_teleop, wait]
+    spin:
+      plugin: nav2_behaviors::Spin
+    backup:
+      plugin: nav2_behaviors::BackUp
+    drive_on_heading:
+      plugin: nav2_behaviors::DriveOnHeading
+    wait:
+      plugin: nav2_behaviors::Wait
+    assisted_teleop:
+      plugin: nav2_behaviors::AssistedTeleop
+    local_frame: odom
+    global_frame: map
+    robot_base_frame: base_footprint
+    transform_tolerance: 0.1
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 1.0
+    min_rotational_vel: 0.4
+    rotational_acc_lim: 3.2
+
+# ════════════════════════════════════════════════════════════════════════════
+# WAYPOINT FOLLOWER
+# ════════════════════════════════════════════════════════════════════════════
+waypoint_follower:
+  ros__parameters:
+    use_sim_time: true
+    loop_rate: 20
+    stop_on_failure: false
+    action_server_result_timeout: 900.0
+    waypoint_task_executor_plugin: wait_at_waypoint
+    wait_at_waypoint:
+      plugin: nav2_waypoint_follower::WaitAtWaypoint
+      enabled: true
+      waypoint_pause_duration: 200
+
+# ════════════════════════════════════════════════════════════════════════════
+# VELOCITY SMOOTHER
+# Suaviza cambios bruscos en /cmd_vel para proteger los motores
+# ════════════════════════════════════════════════════════════════════════════
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: true
+    smoothing_frequency: 20.0
+    scale_velocities: false
+    feedback: OPEN_LOOP
+    max_velocity: [0.22, 0.0, 1.0]
+    min_velocity: [-0.22, 0.0, -1.0]
+    max_accel: [2.5, 0.0, 3.2]
+    max_decel: [-2.5, 0.0, -3.2]
+    odom_topic: odom
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+
+# ════════════════════════════════════════════════════════════════════════════
+# MAP SERVER
+# ════════════════════════════════════════════════════════════════════════════
+map_server:
+  ros__parameters:
+    use_sim_time: true
+    yaml_filename: ""    # se sobreescribe desde localization.launch.py
+
+# ════════════════════════════════════════════════════════════════════════════
+# MAP SAVER
+# ════════════════════════════════════════════════════════════════════════════
+map_saver:
+  ros__parameters:
+    use_sim_time: true
+    save_map_timeout: 5.0
+    free_thresh_default: 0.25
+    occupied_thresh_default: 0.65
+    map_subscribe_transient_local: true

@@ -1,0 +1,93 @@
+# ekf.yaml
+# --------
+# Configuración del Extended Kalman Filter (robot_localization).
+#
+# El EKF fusiona:
+#   odom0 → /odom   (odometría rueda desde DiffDrive plugin en Gazebo)
+#   imu0  → /imu    (orientación + velocidades angulares desde sensor IMU)
+#
+# Vector de estado: [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+# Índices:           [0  1  2   3     4     5    6   7   8    9      10      11   12  13  14]
+#
+# Para robot diferencial 2D: solo usamos x, y, yaw, vx, vyaw
+# → z, roll, pitch están fijos → two_d_mode: true los ignora
+
+ekf_filter_node:
+  ros__parameters:
+    use_sim_time: true
+
+    # ── Frecuencia del filtro ──────────────────────────────────────────────────
+    # 30 Hz es suficiente para TB3. Debe ser >= frecuencia de sensores.
+    frequency: 30.0
+
+    # Tiempo máximo sin dato antes de marcar sensor como timeout
+    sensor_timeout: 0.1
+
+    # Solo estimación 2D: ignora z, roll, pitch
+    two_d_mode: true
+
+    # ── Frames TF ─────────────────────────────────────────────────────────────
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_footprint
+    world_frame: odom
+
+    # publish_tf: false → el bridge ya publica odom→base_footprint desde Gazebo
+    # Si lo dejamos en true, hay dos fuentes para el mismo TF → conflicto.
+    # El EKF solo aporta /odometry/filtered (odometría suavizada para NAV2).
+    publish_tf: false
+
+    # ── Fuente 1: Odometría de ruedas ─────────────────────────────────────────
+    # Publicada por DiffDrive en Gazebo, bridgeada por ros_gz_bridge
+    odom0: /odom
+    # Máscara de configuración (15 valores = vector de estado completo):
+    # [x,     y,     z,     roll,  pitch, yaw,
+    #  vx,    vy,    vz,    vroll, vpitch,vyaw,
+    #  ax,    ay,    az]
+    # true = usar este valor del sensor en la fusión
+    odom0_config: [true,  true,  false,
+                   false, false, true,
+                   true,  false, false,
+                   false, false, true,
+                   false, false, false]
+    odom0_queue_size: 2
+    odom0_nodelay: false
+    odom0_differential: false
+    odom0_relative: false
+
+    # ── Fuente 2: IMU ─────────────────────────────────────────────────────────
+    # Sensor IMU del TurtleBot3 Waffle
+    imu0: /imu
+    # Usamos: orientación roll/pitch/yaw + velocidades angulares
+    imu0_config: [false, false, false,
+                  true,  true,  true,
+                  false, false, false,
+                  true,  true,  true,
+                  false, false, false]
+    imu0_nodelay: false
+    imu0_differential: false
+    imu0_relative: true
+    imu0_remove_gravitational_acceleration: true
+    imu0_queue_size: 5
+
+    # ── Control (desactivado — usamos solo sensores) ──────────────────────────
+    use_control: false
+
+    # ── Covarianza de ruido de proceso (15x15) ────────────────────────────────
+    # Valores altos = más incertidumbre en esa variable → filtro confía más en sensores
+    # Valores bajos = modelo dinámico más preciso
+    process_noise_covariance: [0.05,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                               0.0,   0.05,  0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                               0.0,   0.0,   0.06,  0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                               0.0,   0.0,   0.0,   0.03,  0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                               0.0,   0.0,   0.0,   0.0,   0.03,  0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                               0.0,   0.0,   0.0,   0.0,   0.0,   0.06,  0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                               0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.025,  0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                               0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.025,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                               0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.04,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+                               0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.01,  0.0,   0.0,   0.0,   0.0,   0.0,
+                               0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.01,  0.0,   0.0,   0.0,   0.0,
+                               0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.02,  0.0,   0.0,   0.0,
+                               0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,
+                               0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,
+                               0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,    0.0,    0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.015]
