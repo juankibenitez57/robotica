@@ -23,7 +23,9 @@ Texto natural
     ↓
 [nlp_intent_node]  ← sentence-transformers multilingual
     ↓  /cognitive/command  (tb3_msgs/CognitiveCommand)
-[cognitive_fsm_node]  ← FSM: IDLE/NAVIGATING/EXPLORING/SEARCHING/ERROR
+[cognitive_fsm_node]  ← FSM: IDLE/NAVIGATING/EXPLORING/SEARCHING/APPROACHING/ERROR
+    ↑  /detected_objects  (tb3_msgs/DetectedObject)
+[yolo_detector_node] ← YOLOv8n + /camera/image_raw (Fase 5)
     ↓  NavigateToPose action
 [NAV2]
     ↓
@@ -43,8 +45,8 @@ Topics clave:
 | 1 | NLP — texto → intención (sentence similarity multilingüe) | ✅ Completa |
 | 2 | LangChain agent → NAV2 (fire-and-forget) | ✅ Completa |
 | 3 | FSM cognitiva con goal tracking real | ✅ Completa |
-| 4 | YOLOv8 percepción visual con cámara RGB | 🔜 Pendiente |
-| 5 | Navegación cognitiva completa (misiones dinámicas) | 🔜 Pendiente |
+| 4 | Robustez cognitiva (STOPPING, explore, search, watchdog, retry) | ✅ Completa |
+| 5 | YOLOv8 percepción visual + acercamiento automático | ✅ Completa |
 
 ## Paquetes del proyecto
 
@@ -65,14 +67,17 @@ tb3_cognitive/
   langchain_agent/agent_node.py — Fase 2 (fire-and-forget, se mantiene)
   langchain_agent/tools.py
   fsm/states.py               — RobotFSM + enum State + tabla de transiciones
-  fsm/fsm_node.py             — CognitiveFSMNode (Fase 3 activa)
+  fsm/fsm_node.py             — CognitiveFSMNode (Fase 5 activa)
+  perception/yolo_node.py     — YoloDetectorNode (Fase 5)
 scripts/
   nlp_intent_node             — wrapper con shebang /opt/ai-venv
   cognitive_agent_node        — wrapper Fase 2
-  fsm_node                    — wrapper Fase 3
+  fsm_node                    — wrapper Fase 3-5
+  yolo_node                   — wrapper Fase 5
 launch/
   cognitive_agent.launch.py   — Fase 2
-  cognitive_fsm.launch.py     — Fase 3 (usar éste)
+  cognitive_fsm.launch.py     — Fase 3-4 (sin cámara)
+  cognitive_vision.launch.py  — Fase 5 (NLP+FSM+YOLO — usar éste)
 config/waypoints.yaml         — coordenadas de habitaciones en frame map
 ```
 
@@ -83,25 +88,32 @@ config/waypoints.yaml         — coordenadas de habitaciones en frame map
 
 ## Comandos de uso
 
-### Lanzar el sistema completo (Fase 3)
+### Lanzar el sistema completo (Fase 5 — con visión YOLO)
 ```bash
 # Terminal 1 — NAV2
 ros2 launch tb3_bringup navigation.launch.py
 
-# Terminal 2 — Capa cognitiva FSM
-ros2 launch tb3_cognitive cognitive_fsm.launch.py
+# Terminal 2 — Capa cognitiva FSM + YOLO
+ros2 launch tb3_cognitive cognitive_vision.launch.py
 
-# Terminal 3 — Monitorear estado
+# Terminal 3 — Monitorear estado y detecciones
 ros2 topic echo /cognitive/fsm_state
+ros2 topic echo /detected_objects
 
-# Terminal 4 — Enviar comando
+# Terminal 4 — Enviar comando de búsqueda visual
+ros2 topic pub --once /nlp/input std_msgs/String "data: 'busca una botella'"
 ros2 topic pub --once /nlp/input std_msgs/String "data: 've a la cocina'"
+```
+
+### Sin cámara (Fases 3-4)
+```bash
+ros2 launch tb3_cognitive cognitive_fsm.launch.py
 ```
 
 ### Compilar
 ```bash
 cd ~/code/ROBOTICA/ros2_ws && source install/setup.bash
-colcon build --packages-select tb3_cognitive tb3_msgs
+colcon build --packages-select tb3_msgs tb3_cognitive tb3_description tb3_bringup
 ```
 
 ### Calibrar waypoints

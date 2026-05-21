@@ -1,0 +1,17 @@
+#!/opt/ai-venv/bin/python3
+"""
+Wrapper ejecutable para yolo_detector_node (Fase 5).
+Usa /opt/ai-venv/bin/python3 para acceder a ultralytics YOLO.
+Inyecta PYTHONPATH para que rclpy, tb3_msgs y tb3_cognitive sean visibles.
+"""
+import sys
+import os
+
+for _p in os.environ.get('PYTHONPATH', '').split(':'):
+    if _p and _p not in sys.path:
+        sys.path.append(_p)
+
+from tb3_cognitive.perception.yolo_node import main
+
+if __name__ == '__main__':
+    main()

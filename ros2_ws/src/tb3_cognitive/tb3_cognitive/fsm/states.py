@@ -61,7 +61,9 @@ _TRANSITIONS: Dict[Tuple[State, str], State] = {
     (State.APPROACHING, 'goal_succeeded'):  State.IDLE,
     (State.APPROACHING, 'goal_failed'):     State.ERROR,
     (State.APPROACHING, 'goal_cancelled'):  State.STOPPED,
-    (State.REPORTING,   'done'):            State.IDLE,
+    # Detección visual YOLO durante búsqueda → acercamiento
+    (State.SEARCHING, 'target_found'):      State.APPROACHING,
+    (State.REPORTING, 'done'):              State.IDLE,
     # Stop → STOPPING (cancelación en curso)
     (State.NAVIGATING,  'stop'):            State.STOPPING,
     (State.EXPLORING,   'stop'):            State.STOPPING,

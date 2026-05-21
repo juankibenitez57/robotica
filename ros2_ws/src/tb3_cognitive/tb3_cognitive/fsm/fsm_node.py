@@ -1,17 +1,17 @@
 """
-fsm/fsm_node.py — Nodo ROS2 con FSM cognitiva robusta (Fase 4)
+fsm/fsm_node.py — Nodo ROS2 con FSM cognitiva robusta (Fase 5)
 
-Mejoras sobre Fase 3:
-  - STOPPING: cancelación real con cancel_goal_async + espera de confirmación
-  - Explore: patrulla secuencial de todos los waypoints definidos
-  - Search: ruta semántica por habitaciones según tipo de objeto buscado
-  - CognitiveMemory: contexto de sesión (last_goal, counters, timestamps)
-  - Confidence gating: comandos con baja confianza son rechazados
-  - Recovery automático tras fallo: clear_costmaps → IDLE
-  - Logging cognitivo profesional en cada transición
+Novedades Fase 5:
+  - Detección visual YOLO: suscripción a /detected_objects durante SEARCHING
+  - TARGET_FOUND: SEARCHING + target_found → APPROACHING (visual servoing)
+  - _do_visual_approach: control proporcional cmd_vel para centrar y avanzar
+  - _do_approach: espera primera detección y hace approach directo
+  - _goal_result_cb: no transiciona desde APPROACHING si la cancelación
+    fue disparada por detección (no por stop del usuario)
 
 Topics:
   Sub:  /cognitive/command   (tb3_msgs/CognitiveCommand)
+  Sub:  /detected_objects    (tb3_msgs/DetectedObject)    ← Fase 5
   Pub:  /cognitive/status    (std_msgs/String)
   Pub:  /cognitive/fsm_state (std_msgs/String)
   Act:  /navigate_to_pose    (nav2_msgs/action/NavigateToPose)
@@ -42,10 +42,36 @@ from geometry_msgs.msg import Twist
 from std_msgs.msg import String
 from nav2_msgs.action import NavigateToPose
 from nav2_msgs.srv import ClearEntireCostmap
-from tb3_msgs.msg import CognitiveCommand
+from tb3_msgs.msg import CognitiveCommand, DetectedObject
 
 from .states import RobotFSM, State
 from .memory import CognitiveMemory
+
+
+# Mapeo: target NLP normalizado → etiquetas YOLO COCO esperadas (normalizadas)
+_YOLO_LABELS: dict[str, set[str]] = {
+    'botella':  {'bottle'},
+    'bottle':   {'bottle'},
+    'persona':  {'person'},
+    'person':   {'person'},
+    'gente':    {'person'},
+    'silla':    {'chair'},
+    'chair':    {'chair'},
+    'mesa':     {'dining_table'},
+    'table':    {'dining_table'},
+    'taza':     {'cup'},
+    'cup':      {'cup'},
+    'vaso':     {'cup'},
+    'sofa':     {'couch'},
+    'couch':    {'couch'},
+    'comida':   {'banana', 'apple', 'sandwich', 'orange', 'pizza', 'hot_dog'},
+    'perro':    {'dog'},
+    'dog':      {'dog'},
+    'gato':     {'cat'},
+    'cat':      {'cat'},
+    'laptop':   {'laptop'},
+    'ordenador': {'laptop'},
+}
 
 
 # ── Rutas de búsqueda semántica ───────────────────────────────────────────────
@@ -109,6 +135,10 @@ class CognitiveFSMNode(Node):
         self._goal_done_event: threading.Event | None = None
         self._goal_done_outcome: list = ['failed']
 
+        # ── Detección visual (Fase 5) ─────────────────────────────────────────
+        self._search_target_label: str | None = None   # activa filtro detección
+        self._last_detection: DetectedObject | None = None
+
         # ── Watchdog de navegación ────────────────────────────────────────────
         self._nav_watchdog_timer = None
 
@@ -133,15 +163,18 @@ class CognitiveFSMNode(Node):
         # ── cmd_vel ───────────────────────────────────────────────────────────
         self._cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
 
-        # ── Suscripción ───────────────────────────────────────────────────────
+        # ── Suscripciones ─────────────────────────────────────────────────────
         self._sub = self.create_subscription(
             CognitiveCommand, '/cognitive/command',
             self._command_callback, 10)
+        self._detection_sub = self.create_subscription(
+            DetectedObject, '/detected_objects',
+            self._detection_callback, 10)
 
         self._publish_fsm_state(State.IDLE)
         self.get_logger().info(
-            'CognitiveFSMNode activo — Fase 4\n'
-            '  Sub: /cognitive/command\n'
+            'CognitiveFSMNode activo — Fase 5\n'
+            '  Sub: /cognitive/command | /detected_objects\n'
             '  Pub: /cognitive/status | /cognitive/fsm_state\n'
             '  Act: /navigate_to_pose\n'
             f'  Waypoints: {len(self._waypoints)}  '
@@ -358,20 +391,26 @@ class CognitiveFSMNode(Node):
             (_SEARCH_ROUTES[k] for k in route_keys if k in t_norm),
             _SEARCH_ROUTES['default']
         )
-
-        # Filtrar a los waypoints que realmente existen
         route = [r for r in route if r in self._waypoints]
         if not route:
             route = [n for n in self._waypoints if n not in ('origin', 'origen')]
 
         self.get_logger().info(
-            f'[SEARCH] Buscando: {target!r}  Ruta semántica: {route}')
+            f'[SEARCH] Buscando: {target!r}  Ruta: {route}')
         self._publish_status(
             f'Buscando {target!r}: ruta {" → ".join(route)}')
 
+        # Activa filtro de detección YOLO
+        self._search_target_label = t_norm
+        self._last_detection = None
+
         for wp_name in route:
             with self._fsm_lock:
-                if self._fsm.state not in (State.SEARCHING,):
+                cur = self._fsm.state
+                if cur == State.APPROACHING:
+                    break  # detección antes de navegar
+                if cur not in (State.SEARCHING,):
+                    self._search_target_label = None
                     return
 
             wp  = self._waypoints[wp_name]
@@ -381,34 +420,89 @@ class CognitiveFSMNode(Node):
 
             self.get_logger().info(
                 f'[SEARCH] Inspeccionando {wp_name} ({x:.2f}, {y:.2f})')
-            self._publish_status(
-                f'Buscando {target!r} en {wp_name}...')
+            self._publish_status(f'Buscando {target!r} en {wp_name}...')
 
             outcome = self._send_nav_goal_blocking(x, y, yaw=yaw, label=wp_name)
 
+            with self._fsm_lock:
+                cur = self._fsm.state
+                if cur == State.APPROACHING:
+                    break  # detección durante navegación
+
             if outcome == 'cancelled':
+                with self._fsm_lock:
+                    if self._fsm.state == State.APPROACHING:
+                        break  # cancel disparado por detección
+                self._search_target_label = None
                 return
+
             if outcome == 'failed':
                 self.get_logger().warn(
                     f'[SEARCH] {wp_name} inaccesible — saltando.')
                 with self._fsm_lock:
                     if self._fsm.state == State.ERROR:
-                        self._fsm.trigger('reset')   # ERROR → IDLE
-                        self._fsm.trigger('search')  # IDLE  → SEARCHING
+                        self._fsm.trigger('reset')
+                        self._fsm.trigger('search')
                 continue
 
+            # Pausa en el waypoint para que YOLO escanee la habitación (2 s)
+            self._publish_status(f'Escaneando {wp_name}...')
+            for _ in range(20):
+                with self._fsm_lock:
+                    if self._fsm.state == State.APPROACHING:
+                        break
+                time.sleep(0.1)
+
+            with self._fsm_lock:
+                if self._fsm.state == State.APPROACHING:
+                    break
+
+        # ── Resultado del bucle ────────────────────────────────────────────────
         with self._fsm_lock:
-            if self._fsm.state == State.SEARCHING:
-                self._publish_status(
-                    f'Búsqueda de {target!r} completada sin detección visual.')
-                self._fsm.trigger('goal_succeeded')
+            cur = self._fsm.state
+
+        if cur == State.APPROACHING:
+            # Target encontrado — continuar con acercamiento visual en este thread
+            lbl = self._search_target_label or target
+            self.get_logger().info(
+                f'[SEARCH] {lbl!r} detectado! Iniciando acercamiento visual.')
+            self._publish_status(
+                f'{lbl!r} detectado. Acercándome...')
+            self._do_visual_approach()
+        else:
+            self._search_target_label = None
+            with self._fsm_lock:
+                if self._fsm.state == State.SEARCHING:
+                    self._publish_status(
+                        f'Búsqueda de {target!r} completada — no detectado visualmente.')
+                    self._fsm.trigger('goal_succeeded')
 
     def _do_approach(self, target: str) -> None:
-        msg = f'Approach {target!r}: disponible en Fase 5 (YOLO).'
-        self.get_logger().info(msg)
-        self._publish_status(msg)
-        with self._fsm_lock:
-            self._fsm.trigger('goal_succeeded')
+        self._search_target_label = self._norm(target)
+        self._last_detection = None
+        self.get_logger().info(
+            f'[APPROACH] Esperando detección de {target!r}...')
+        self._publish_status(
+            f'Esperando {target!r} en cámara (10 s)...')
+
+        # Espera hasta 10 s a que YOLO detecte el objetivo
+        for _ in range(100):
+            if self._last_detection is not None:
+                break
+            with self._fsm_lock:
+                if self._fsm.state != State.APPROACHING:
+                    return
+            time.sleep(0.1)
+
+        if self._last_detection is None:
+            self._publish_status(
+                f'{target!r} no visible. Apunta la cámara al objeto.')
+            self._search_target_label = None
+            with self._fsm_lock:
+                self._fsm.trigger('goal_succeeded')
+            return
+
+        self._do_visual_approach()
 
     def _do_report(self) -> None:
         nav_ok  = self._nav_client.server_is_ready()
@@ -421,6 +515,113 @@ class CognitiveFSMNode(Node):
         self._publish_status(msg)
         with self._fsm_lock:
             self._fsm.trigger('done')
+
+    # ── Detección visual YOLO (Fase 5) ────────────────────────────────────────
+
+    def _detection_callback(self, msg: DetectedObject) -> None:
+        if not self._search_target_label:
+            return
+        with self._fsm_lock:
+            cur = self._fsm.state
+            if cur == State.APPROACHING:
+                # Approach en curso — actualiza detección para el servoing
+                if self._detection_matches_target(msg.label, self._search_target_label):
+                    self._last_detection = msg
+                return
+            if cur != State.SEARCHING:
+                return
+            if not self._detection_matches_target(msg.label, self._search_target_label):
+                return
+            # Primera detección durante búsqueda → transiciona
+            self._last_detection = msg
+            if not self._fsm.trigger('target_found'):  # SEARCHING → APPROACHING
+                return
+
+        self.get_logger().info(
+            f'[VISION] {msg.label!r} detectado!  '
+            f'conf={msg.confidence:.2f}  cx={msg.center_x_norm:.2f}  '
+            f'area={msg.area_norm:.3f}')
+        self._publish_status(
+            f'{msg.label!r} detectado (conf={msg.confidence:.2f})!')
+
+        # Cancela navegación activa para que el search loop despierte
+        if self._current_goal_handle is not None:
+            self._current_goal_handle.cancel_goal_async()
+        else:
+            self._signal_goal_done('cancelled')
+
+    def _detection_matches_target(self, yolo_label: str, target: str) -> bool:
+        t = self._norm(target)
+        normed_label = self._norm(yolo_label)
+        labels = _YOLO_LABELS.get(t)
+        if labels:
+            return normed_label in labels
+        return t in normed_label or normed_label in t
+
+    def _do_visual_approach(self) -> None:
+        """
+        Control proporcional para centrar el objeto en cámara y avanzar.
+        Corre en el thread del search/approach — usa time.sleep() como rate.
+        """
+        KP_ANG   = 1.2
+        KP_LIN   = 0.5
+        MAX_LIN  = 0.15   # m/s
+        AREA_TGT = 0.15   # detener cuando el objeto ocupa ≥15% del frame
+        TIMEOUT  = 30.0
+
+        label = self._search_target_label or 'objeto'
+        self.get_logger().info(
+            f'[APPROACH] Servoing visual hacia {label!r} '
+            f'(área objetivo {AREA_TGT*100:.0f}%)')
+        t_start = time.time()
+
+        while rclpy.ok():
+            if time.time() - t_start > TIMEOUT:
+                self.get_logger().warn(
+                    f'[APPROACH] Timeout {TIMEOUT:.0f}s — '
+                    f'{label!r} perdido o inalcanzable.')
+                break
+
+            with self._fsm_lock:
+                if self._fsm.state != State.APPROACHING:
+                    return  # stop externo
+
+            det    = self._last_detection
+            twist  = Twist()
+
+            if det is None:
+                # Sin detección — girar despacio para buscar
+                twist.angular.z = 0.25
+            else:
+                error_x = det.center_x_norm - 0.5   # >0 → objeto a la derecha
+                area    = det.area_norm
+
+                twist.angular.z = -KP_ANG * error_x  # CCW para centrar
+                if area < AREA_TGT:
+                    advance = KP_LIN * (AREA_TGT - area)
+                    twist.linear.x = min(advance, MAX_LIN)
+
+                if area >= AREA_TGT and abs(error_x) < 0.10:
+                    self.get_logger().info(
+                        f'[APPROACH] {label!r} alcanzado  '
+                        f'area={area:.3f}  err_x={error_x:.3f}')
+                    break
+
+            self._cmd_vel_pub.publish(twist)
+            time.sleep(0.10)  # 10 Hz
+
+        self._zero_velocity()
+        self._search_target_label = None
+        self._last_detection      = None
+
+        msg_txt = (f'¡{label!r} encontrado y alcanzado! '
+                   'Robot parado frente al objetivo.')
+        self.get_logger().info(f'[APPROACH] {msg_txt}')
+        self._publish_status(msg_txt)
+        self._memory.record_success(label)
+
+        with self._fsm_lock:
+            self._fsm.trigger('goal_succeeded')  # APPROACHING → IDLE
 
     # ── Stop / cancela goal activo ────────────────────────────────────────────
 
@@ -632,18 +833,25 @@ class CognitiveFSMNode(Node):
             self.get_logger().info('[NAV2] Goal succeeded ✓')
             self._publish_status('Llegué al destino.')
             with self._fsm_lock:
-                self._fsm.trigger('goal_succeeded')
+                # No tocar si ya estamos en APPROACHING (detección disparó transición)
+                if self._fsm.state != State.APPROACHING:
+                    self._fsm.trigger('goal_succeeded')
             self._signal_goal_done('succeeded')
 
         elif status == GoalStatus.STATUS_CANCELED:
             self.get_logger().info('[NAV2] Goal cancelado.')
             with self._fsm_lock:
-                self._fsm.trigger('goal_cancelled')
-                # STOPPED → auto-reset a IDLE
-                if self._fsm.state == State.STOPPED:
-                    self._fsm.trigger('reset')
+                cur = self._fsm.state
+                if cur == State.APPROACHING:
+                    # Cancel disparado por detección YOLO — APPROACHING es correcto
+                    pass
+                else:
+                    self._fsm.trigger('goal_cancelled')
+                    if self._fsm.state == State.STOPPED:
+                        self._fsm.trigger('reset')
             self._zero_velocity()
-            self._publish_status('Robot detenido. FSM en IDLE.')
+            if cur != State.APPROACHING:
+                self._publish_status('Robot detenido. FSM en IDLE.')
             self._signal_goal_done('cancelled')
 
         else:
@@ -651,8 +859,10 @@ class CognitiveFSMNode(Node):
             self._publish_status(f'No llegué al destino (status={status}).')
             self._memory.record_failure(f'NAV2 status={status}')
             with self._fsm_lock:
-                prev = self._fsm.state
-                self._fsm.trigger('goal_failed')
+                cur = self._fsm.state
+                prev = cur
+                if cur != State.APPROACHING:
+                    self._fsm.trigger('goal_failed')
             # Recovery automático solo para NAVIGATING — explore/search
             # manejan sus propios fallos de waypoint inline para evitar
             # race conditions entre el recovery thread y el patrol loop.
