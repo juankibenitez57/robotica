@@ -208,6 +208,67 @@
     </model>
 
     <!-- ═══════════════════════════════════════════════════
+         OBJETOS DETECTABLES POR YOLO — Fase 5
+         kitchen:     Mustard Bottle (YCB) — texturas reales, YOLO detecta 'bottle'
+         living_room: botella primitiva  — respaldo garantizado
+    ═══════════════════════════════════════════════════ -->
+
+    <!-- Mustard Bottle (YCB dataset) — Fuel/Gambit — modelo con textura fotorrealista
+         Cacheado en ~/.gz/fuel/ — Gazebo lo carga sin internet
+         Waypoint kitchen: x=-2.97, y=-0.79, yaw=0 (robot mira +x)
+         Botella a ~75 cm delante del robot al llegar a kitchen -->
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/Gambit/models/Mustard%20Bottle</uri>
+      <name>mustard_bottle_kitchen</name>
+      <pose>-2.2 -0.79 0 0 0 0</pose>
+    </include>
+
+    <!-- Botella primitiva — living_room (frente al waypoint x=-2.0, y=1.5, yaw=0)
+         Radio 3.5 cm, altura 27 cm, color azul-translúcido
+         Respaldo si el modelo Fuel no carga; también sirve para pruebas adicionales -->
+    <model name="bottle_living_room">
+      <static>true</static>
+      <pose>-1.3 1.5 0 0 0 0</pose>
+      <link name="link">
+        <!-- Cuerpo -->
+        <visual name="body">
+          <pose>0 0 0.11 0 0 0</pose>
+          <geometry><cylinder><radius>0.035</radius><length>0.22</length></cylinder></geometry>
+          <material>
+            <ambient>0.5 0.8 1.0 0.85</ambient>
+            <diffuse>0.3 0.65 1.0 0.80</diffuse>
+            <specular>0.9 0.95 1.0 1.0</specular>
+          </material>
+        </visual>
+        <!-- Cuello -->
+        <visual name="neck">
+          <pose>0 0 0.245 0 0 0</pose>
+          <geometry><cylinder><radius>0.018</radius><length>0.05</length></cylinder></geometry>
+          <material>
+            <ambient>0.5 0.8 1.0 0.85</ambient>
+            <diffuse>0.3 0.65 1.0 0.80</diffuse>
+            <specular>0.9 0.95 1.0 1.0</specular>
+          </material>
+        </visual>
+        <!-- Tapón (azul oscuro) -->
+        <visual name="cap">
+          <pose>0 0 0.278 0 0 0</pose>
+          <geometry><cylinder><radius>0.022</radius><length>0.016</length></cylinder></geometry>
+          <material>
+            <ambient>0.05 0.2 0.7 1.0</ambient>
+            <diffuse>0.05 0.2 0.7 1.0</diffuse>
+            <specular>0.4 0.4 0.7 1.0</specular>
+          </material>
+        </visual>
+        <!-- Colisión unificada -->
+        <collision name="col">
+          <pose>0 0 0.137 0 0 0</pose>
+          <geometry><cylinder><radius>0.035</radius><length>0.274</length></cylinder></geometry>
+        </collision>
+      </link>
+    </model>
+
+    <!-- ═══════════════════════════════════════════════════
          CILINDROS (empujables) — dispersos por el campo
     ═══════════════════════════════════════════════════ -->
     <model name="cylinder_1">

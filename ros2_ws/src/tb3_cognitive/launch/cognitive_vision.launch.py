@@ -79,8 +79,8 @@ def generate_launch_description():
 
     declare_yolo_confidence = DeclareLaunchArgument(
         'yolo_confidence',
-        default_value='0.50',
-        description='Umbral de confianza para detecciones YOLO (0.0–1.0)')
+        default_value='0.40',
+        description='Umbral de confianza para detecciones YOLO (0.0–1.0); 0.40 en sim')
 
     nlp_node = Node(
         package='tb3_cognitive',
