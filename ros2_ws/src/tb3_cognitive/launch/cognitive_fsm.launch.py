@@ -56,6 +56,16 @@ def generate_launch_description():
         default_value='0.35',
         description='Confianza mínima NLP para ejecutar comando (0.0–1.0)')
 
+    declare_max_nav_time = DeclareLaunchArgument(
+        'max_nav_time',
+        default_value='120.0',
+        description='Watchdog: segundos máximos por goal antes de recovery')
+
+    declare_max_retries = DeclareLaunchArgument(
+        'max_retries',
+        default_value='1',
+        description='Reintentos automáticos tras recovery')
+
     declare_model = DeclareLaunchArgument(
         'model',
         default_value='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
@@ -81,16 +91,20 @@ def generate_launch_description():
         prefix='/opt/ai-venv/bin/python3',
         additional_env={'PYTHONPATH': _pythonpath},
         parameters=[{
-            'waypoints_file':      LaunchConfiguration('waypoints_file'),
-            'nav_timeout':         5.0,
-            'max_abs_coordinate':  LaunchConfiguration('max_abs_coordinate'),
+            'waypoints_file':       LaunchConfiguration('waypoints_file'),
+            'nav_timeout':          5.0,
+            'max_abs_coordinate':   LaunchConfiguration('max_abs_coordinate'),
             'confidence_threshold': LaunchConfiguration('confidence_threshold'),
+            'max_nav_time':         LaunchConfiguration('max_nav_time'),
+            'max_retries':          LaunchConfiguration('max_retries'),
         }])
 
     return LaunchDescription([
         declare_waypoints,
         declare_max_abs_coordinate,
         declare_confidence,
+        declare_max_nav_time,
+        declare_max_retries,
         declare_model,
         nlp_node,
         fsm_node,

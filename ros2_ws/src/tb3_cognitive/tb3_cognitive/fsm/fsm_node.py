@@ -22,6 +22,8 @@ Parámetros:
   nav_timeout           — segundos para esperar servidor NAV2 (default 5.0)
   max_abs_coordinate    — límite espacial preventivo en metros (default 20.0)
   confidence_threshold  — confianza mínima para ejecutar comando (default 0.35)
+  max_nav_time          — watchdog: segundos máximos por goal antes de recovery (default 120.0)
+  max_retries           — reintentos automáticos tras recovery (default 1)
 """
 
 import math
@@ -84,6 +86,10 @@ class CognitiveFSMNode(Node):
             'max_abs_coordinate', 20.0).get_parameter_value().double_value
         self._confidence_threshold = self.declare_parameter(
             'confidence_threshold', 0.35).get_parameter_value().double_value
+        self._max_nav_time = self.declare_parameter(
+            'max_nav_time', 120.0).get_parameter_value().double_value
+        self._max_retries = self.declare_parameter(
+            'max_retries', 1).get_parameter_value().integer_value
 
         # ── Waypoints + aliases ───────────────────────────────────────────────
         self._waypoints, self._aliases = self._load_waypoints(waypoints_file)
@@ -102,6 +108,14 @@ class CognitiveFSMNode(Node):
         self._current_goal_handle = None
         self._goal_done_event: threading.Event | None = None
         self._goal_done_outcome: list = ['failed']
+
+        # ── Watchdog de navegación ────────────────────────────────────────────
+        self._nav_watchdog_timer = None
+
+        # ── Retry tras recovery ───────────────────────────────────────────────
+        self._retry_count   = 0
+        self._last_nav_action: str | None = None
+        self._last_nav_target: str | None = None
 
         # ── Publishers ────────────────────────────────────────────────────────
         self._status_pub = self.create_publisher(String, '/cognitive/status', 10)
@@ -189,15 +203,18 @@ class CognitiveFSMNode(Node):
                     else f'Reset no válido desde {self._fsm.state.value}.')
                 return
 
-            # ── Confidence gating ─────────────────────────────────────────────
+            # ── Confidence gating → UNKNOWN ───────────────────────────────────
             if (msg.confidence < self._confidence_threshold
                     and msg.action not in ('stop', 'reset', 'report')):
                 self.get_logger().warn(
-                    f'[GATE] Confianza insuficiente: {msg.confidence:.2f} < '
+                    f'[UNKNOWN] conf={msg.confidence:.2f} < '
                     f'{self._confidence_threshold:.2f}  '
-                    f'action={msg.action!r} rechazado.')
+                    f'action={msg.action!r} — comando ambiguo.')
+                self._fsm.trigger('unknown')   # IDLE → UNKNOWN
                 self._publish_status(
-                    f'Confianza baja ({msg.confidence:.2f}): reformula el comando.')
+                    f'Comando ambiguo (conf={msg.confidence:.2f}): '
+                    f'reformula la instrucción.')
+                self._fsm.trigger('reset')     # UNKNOWN → IDLE (transiente)
                 return
 
             # ── Auto-recovery en ERROR ────────────────────────────────────────
@@ -275,8 +292,16 @@ class CognitiveFSMNode(Node):
             f'Navegando: {target!r} → {wp_name} ({x:.2f}, {y:.2f})')
         self._memory.record_navigation(wp_name, x, y)
 
+        # Guarda contexto para posible retry
+        self._last_nav_action = 'navigate'
+        self._last_nav_target = target
+
+        self._start_nav_watchdog()
         outcome = self._send_nav_goal_blocking(x, y, yaw=yaw, label=wp_name)
+        self._stop_nav_watchdog()
+
         if outcome == 'succeeded':
+            self._retry_count = 0
             self._memory.record_success(wp_name)
 
     def _do_explore(self) -> None:
@@ -420,10 +445,72 @@ class CognitiveFSMNode(Node):
         for _ in range(5):
             self._cmd_vel_pub.publish(twist)
 
+    # ── Watchdog de navegación ────────────────────────────────────────────────
+
+    def _start_nav_watchdog(self) -> None:
+        self._stop_nav_watchdog()
+        self._nav_watchdog_timer = self.create_timer(
+            self._max_nav_time, self._nav_watchdog_cb)
+
+    def _stop_nav_watchdog(self) -> None:
+        if self._nav_watchdog_timer is not None:
+            self._nav_watchdog_timer.cancel()
+            self._nav_watchdog_timer = None
+
+    def _nav_watchdog_cb(self) -> None:
+        self._stop_nav_watchdog()
+        with self._fsm_lock:
+            if self._fsm.state not in (
+                    State.NAVIGATING, State.EXPLORING, State.SEARCHING):
+                return
+        self.get_logger().error(
+            f'[WATCHDOG] Timeout {self._max_nav_time:.0f}s — '
+            'robot posiblemente atascado. Iniciando recovery.')
+        self._publish_status(
+            f'Watchdog: navegación superó {self._max_nav_time:.0f}s. Recovery.')
+        if self._current_goal_handle is not None:
+            self._current_goal_handle.cancel_goal_async()
+        with self._fsm_lock:
+            self._fsm.trigger('goal_failed')
+        self._start_recovery()
+        self._signal_goal_done('failed')
+
     # ── Recovery ──────────────────────────────────────────────────────────────
 
     def _start_recovery(self) -> None:
-        threading.Thread(target=self._do_recovery, daemon=True).start()
+        threading.Thread(target=self._do_recovery_with_retry, daemon=True).start()
+
+    def _do_recovery_with_retry(self) -> None:
+        ok = self._do_recovery()
+        if not ok:
+            return
+        # Retry automático si hay un goal previo y quedan intentos
+        if (self._last_nav_action is not None
+                and self._retry_count < self._max_retries):
+            self._retry_count += 1
+            action = self._last_nav_action
+            target = self._last_nav_target or ''
+            self.get_logger().info(
+                f'[RETRY] Intento {self._retry_count}/{self._max_retries}: '
+                f'{action!r} → {target!r}')
+            self._publish_status(
+                f'Recovery OK. Reintentando ({self._retry_count}/{self._max_retries}): '
+                f'{action} → {target!r}')
+            with self._fsm_lock:
+                if not self._fsm.trigger(action):
+                    return
+            self._dispatch(action, target)
+        else:
+            if self._retry_count >= self._max_retries:
+                self.get_logger().warn(
+                    f'[RETRY] Máximo de reintentos alcanzado '
+                    f'({self._max_retries}). FSM en IDLE.')
+                self._publish_status(
+                    f'Reintentos agotados ({self._max_retries}). '
+                    'Esperando nuevo comando.')
+            self._retry_count = 0
+            self._last_nav_action = None
+            self._last_nav_target = None
 
     def _recover_then_dispatch(self, action: str, target: str) -> None:
         if not self._do_recovery():

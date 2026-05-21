@@ -12,6 +12,7 @@ Estados:
   REPORTING   — publicando estado del sistema
   ERROR       — goal fallido, esperando recovery
   RECOVERY    — limpiando costmaps + reset de navegación
+  UNKNOWN     — comando con confianza insuficiente (transiente)
 
 Eventos válidos:
   navigate, explore, search, approach, report  — inician acción desde IDLE
@@ -37,6 +38,7 @@ class State(str, Enum):
     REPORTING   = 'REPORTING'
     ERROR       = 'ERROR'
     RECOVERY    = 'RECOVERY'
+    UNKNOWN     = 'UNKNOWN'
 
 
 _TRANSITIONS: Dict[Tuple[State, str], State] = {
@@ -70,6 +72,10 @@ _TRANSITIONS: Dict[Tuple[State, str], State] = {
     (State.STOPPING, 'goal_cancelled'):     State.STOPPED,
     (State.STOPPING, 'goal_succeeded'):     State.STOPPED,
     (State.STOPPING, 'goal_failed'):        State.STOPPED,
+    # UNKNOWN (transiente — siempre vuelve a IDLE)
+    (State.IDLE,    'unknown'):             State.UNKNOWN,
+    (State.UNKNOWN, 'reset'):               State.IDLE,
+    (State.UNKNOWN, 'stop'):                State.IDLE,
     # STOPPED / ERROR → IDLE
     (State.STOPPED, 'reset'):               State.IDLE,
     (State.STOPPED, 'stop'):                State.STOPPED,
