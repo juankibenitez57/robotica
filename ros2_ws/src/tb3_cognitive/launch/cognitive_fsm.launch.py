@@ -51,6 +51,11 @@ def generate_launch_description():
         default_value='20.0',
         description='Límite preventivo absoluto para x/y en frame map')
 
+    declare_confidence = DeclareLaunchArgument(
+        'confidence_threshold',
+        default_value='0.35',
+        description='Confianza mínima NLP para ejecutar comando (0.0–1.0)')
+
     declare_model = DeclareLaunchArgument(
         'model',
         default_value='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
@@ -76,14 +81,16 @@ def generate_launch_description():
         prefix='/opt/ai-venv/bin/python3',
         additional_env={'PYTHONPATH': _pythonpath},
         parameters=[{
-            'waypoints_file': LaunchConfiguration('waypoints_file'),
-            'nav_timeout':    5.0,
-            'max_abs_coordinate': LaunchConfiguration('max_abs_coordinate'),
+            'waypoints_file':      LaunchConfiguration('waypoints_file'),
+            'nav_timeout':         5.0,
+            'max_abs_coordinate':  LaunchConfiguration('max_abs_coordinate'),
+            'confidence_threshold': LaunchConfiguration('confidence_threshold'),
         }])
 
     return LaunchDescription([
         declare_waypoints,
         declare_max_abs_coordinate,
+        declare_confidence,
         declare_model,
         nlp_node,
         fsm_node,
