@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<robot name="tb3_arm" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- TB3 Waffle kinematics (links + joints from nav2_minimal_tb3_sim) -->
+  <xacro:include filename="$(find nav2_minimal_tb3_sim)/urdf/turtlebot3_waffle.urdf"/>
+
+  <!-- IRB120 arm macro (bringup=false → adds transmission + ros2_control sections) -->
+  <xacro:include filename="$(find irb120_jazzy_sim)/urdf/irb120_macro.urdf.xacro"/>
+  <xacro:irb120 bringup="false" robot_ip="" EE="false" EE_name="" prefix="arm_"/>
+
+  <!-- Fixed joint: arm base mounted on top of TB3 body, centered -->
+  <joint name="arm_base_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="arm_base_link"/>
+    <origin xyz="0.0 0.0 0.10" rpy="0 0 0"/>
+  </joint>
+
+</robot>

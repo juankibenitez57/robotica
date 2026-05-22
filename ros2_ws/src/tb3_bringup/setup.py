@@ -17,7 +17,7 @@ setup(
         (os.path.join('share', package_name, 'worlds'),
             glob('worlds/*')),
         (os.path.join('share', package_name, 'config'),
-            glob('config/*.yaml')),
+            glob('config/*.yaml') + glob('config/*.srdf')),
         (os.path.join('share', package_name, 'config', 'rviz'),
             glob('config/rviz/*.rviz')),
         (os.path.join('share', package_name, 'rviz'),

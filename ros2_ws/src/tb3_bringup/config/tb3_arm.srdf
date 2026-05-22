@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<!--
+  tb3_arm.srdf — Semantic Robot Description for TB3 Waffle + IRB120 arm
+  -----------------------------------------------------------------------
+  Planning group: irb120_arm  (chain arm_base_link → arm_tool0)
+  Virtual joint:  base_footprint attached to 'odom' frame (fixed)
+                  → correcto para robot estacionario en FASE C
+
+  Para FASE D+ con robot en movimiento:
+    cambiar type="fixed" a type="planar" o type="floating"
+-->
+<robot name="tb3_arm">
+
+  <!-- Planning group: IRB120 arm chain -->
+  <group name="irb120_arm">
+    <chain base_link="arm_base_link" tip_link="arm_tool0"/>
+  </group>
+
+  <!-- Named configurations -->
+  <group_state name="all_zero" group="irb120_arm">
+    <joint name="arm_joint_1" value="0"/>
+    <joint name="arm_joint_2" value="0"/>
+    <joint name="arm_joint_3" value="0"/>
+    <joint name="arm_joint_4" value="0"/>
+    <joint name="arm_joint_5" value="0"/>
+    <joint name="arm_joint_6" value="0"/>
+  </group_state>
+
+  <group_state name="home" group="irb120_arm">
+    <joint name="arm_joint_1" value="0"/>
+    <joint name="arm_joint_2" value="-0.7"/>
+    <joint name="arm_joint_3" value="0.9"/>
+    <joint name="arm_joint_4" value="0"/>
+    <joint name="arm_joint_5" value="1.0"/>
+    <joint name="arm_joint_6" value="0"/>
+  </group_state>
+
+  <!-- Virtual joint: robot root (base_footprint) attached to odom frame -->
+  <virtual_joint name="virtual_joint" type="fixed"
+                 parent_frame="odom" child_link="base_footprint"/>
+
+  <!-- ── Disable collisions entre links adyacentes del brazo ── -->
+  <disable_collisions link1="arm_base_link" link2="arm_link_1" reason="Adjacent"/>
+  <disable_collisions link1="arm_base_link" link2="arm_link_2" reason="Never"/>
+  <disable_collisions link1="arm_link_1"    link2="arm_link_2" reason="Adjacent"/>
+  <disable_collisions link1="arm_link_2"    link2="arm_link_3" reason="Adjacent"/>
+  <disable_collisions link1="arm_link_2"    link2="arm_link_5" reason="Never"/>
+  <disable_collisions link1="arm_link_2"    link2="arm_link_6" reason="Never"/>
+  <disable_collisions link1="arm_link_3"    link2="arm_link_4" reason="Adjacent"/>
+  <disable_collisions link1="arm_link_3"    link2="arm_link_5" reason="Never"/>
+  <disable_collisions link1="arm_link_3"    link2="arm_link_6" reason="Never"/>
+  <disable_collisions link1="arm_link_4"    link2="arm_link_5" reason="Adjacent"/>
+  <disable_collisions link1="arm_link_4"    link2="arm_link_6" reason="Default"/>
+  <disable_collisions link1="arm_link_5"    link2="arm_link_6" reason="Adjacent"/>
+
+  <!-- ── Disable collisions entre brazo y cuerpo del TB3 ── -->
+  <disable_collisions link1="arm_base_link" link2="base_link"  reason="Adjacent"/>
+  <disable_collisions link1="arm_link_1"    link2="base_link"  reason="Never"/>
+  <disable_collisions link1="arm_base_link" link2="base_scan"  reason="Never"/>
+  <disable_collisions link1="arm_link_1"    link2="base_scan"  reason="Never"/>
+
+</robot>
