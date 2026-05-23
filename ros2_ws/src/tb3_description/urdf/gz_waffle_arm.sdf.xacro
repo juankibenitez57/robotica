@@ -60,6 +60,7 @@
       </link>
 
       <link name="imu_link">
+        <pose>-0.032 0 0.078 0 0 0</pose>
         <sensor name="tb3_imu" type="imu">
           <always_on>true</always_on>
           <update_rate>200</update_rate>
@@ -334,12 +335,19 @@
         <axis><xyz>0 0 1</xyz></axis>
       </joint>
 
+      <joint name="imu_joint" type="fixed">
+        <parent>base_link</parent>
+        <child>imu_link</child>
+        <pose>-0.032 0 0.068 0 0 0</pose>
+      </joint>
+
       <!-- ================================================================ -->
       <!-- IRB120 ARM LINKS (prefix: arm_)                                   -->
       <!-- Attachment: arm_base_link on top of TB3 body (z=0.10 from base_link) -->
       <!-- ================================================================ -->
 
       <link name="arm_base_link">
+        <pose>0 0 0.10 0 0 0</pose>
         <gravity>false</gravity>
         <inertial>
           <mass>6.215</mass>
@@ -367,6 +375,7 @@
       </link>
 
       <link name="arm_link_1">
+        <pose>0 0 0.10 0 0 0</pose>
         <gravity>false</gravity>
         <inertial>
           <mass>3.067</mass>
@@ -390,6 +399,7 @@
       </link>
 
       <link name="arm_link_2">
+        <pose>0 0 0.39 0 0 0</pose>
         <gravity>false</gravity>
         <inertial>
           <mass>3.909</mass>
@@ -413,6 +423,7 @@
       </link>
 
       <link name="arm_link_3">
+        <pose>0 0 0.66 0 0 0</pose>
         <gravity>false</gravity>
         <inertial>
           <mass>2.944</mass>
@@ -436,6 +447,7 @@
       </link>
 
       <link name="arm_link_4">
+        <pose>0 0 0.73 0 0 0</pose>
         <gravity>false</gravity>
         <inertial>
           <mass>1.328</mass>
@@ -459,6 +471,7 @@
       </link>
 
       <link name="arm_link_5">
+        <pose>0.302 0 0.73 0 0 0</pose>
         <gravity>false</gravity>
         <inertial>
           <mass>0.546</mass>
@@ -482,6 +495,7 @@
       </link>
 
       <link name="arm_link_6">
+        <pose>0.374 0 0.73 0 0 0</pose>
         <gravity>false</gravity>
         <inertial>
           <mass>0.137</mass>
