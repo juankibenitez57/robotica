@@ -172,8 +172,7 @@ def generate_launch_description():
         bridge,
         # Spawn retrasado 3s: RSP debe publicar robot_description antes del spawn
         TimerAction(period=3.0, actions=[spawn_robot]),
-        # Spawners con timeout: esperan a /controller_manager (creado por gz_ros2_control)
-        TimerAction(period=15.0, actions=[spawn_jsb]),
-        TimerAction(period=16.0, actions=[spawn_arm_ctrl]),
+        TimerAction(period=4.0, actions=[spawn_jsb]),
+        TimerAction(period=5.0, actions=[spawn_arm_ctrl]),
         rviz,
     ])
