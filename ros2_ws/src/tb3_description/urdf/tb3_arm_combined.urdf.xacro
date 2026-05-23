@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <robot name="tb3_arm" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <!-- TB3 Waffle kinematics (links + joints from nav2_minimal_tb3_sim) -->
-  <xacro:include filename="$(find nav2_minimal_tb3_sim)/urdf/turtlebot3_waffle.urdf"/>
+  <!-- TB3 Waffle kinematics — local URDF with correct mesh paths -->
+  <xacro:include filename="$(find tb3_description)/urdf/tb3_waffle.urdf"/>
 
   <!-- IRB120 arm macro (bringup=false → adds transmission + ros2_control sections) -->
   <xacro:include filename="$(find irb120_jazzy_sim)/urdf/irb120_macro.urdf.xacro"/>
