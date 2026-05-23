@@ -25,6 +25,7 @@ TF chain:
 """
 
 import os
+import subprocess
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -39,7 +40,6 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration
 from launch_ros.actions import Node
-from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -78,12 +78,12 @@ def generate_launch_description():
 
     # ── 2. Robot State Publisher — URDF combinado (TB3 + brazo) ───────────────
     # Incluye <ros2_control name="arm_GazeboSystem"> con arm_joint_1..6
-    # El plugin gz_ros2_control del SDF lee robot_description de este nodo
+    # El plugin gz_ros2_control del SDF lee robot_description de este nodo.
+    # Se expande xacro en Python (como gazebo.launch.py usa open()) para evitar
+    # que Command() falle silenciosamente y RSP no arranque.
     arm_combined_urdf = os.path.join(pkg_tb3_desc, 'urdf', 'tb3_arm_combined.urdf.xacro')
-
-    robot_description = ParameterValue(
-        Command([FindExecutable(name='xacro'), ' ', arm_combined_urdf]),
-        value_type=str)
+    robot_description_content = subprocess.check_output(
+        ['xacro', arm_combined_urdf]).decode('utf-8')
 
     robot_state_publisher = Node(
         package='robot_state_publisher',
@@ -91,7 +91,7 @@ def generate_launch_description():
         name='robot_state_publisher',
         output='screen',
         parameters=[{
-            'robot_description': robot_description,
+            'robot_description': robot_description_content,
             'use_sim_time': True,
         }])
 
