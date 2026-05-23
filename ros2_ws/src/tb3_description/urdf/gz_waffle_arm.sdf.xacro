@@ -341,6 +341,7 @@
 
       <link name="arm_base_link">
         <pose>0 0 0.10 0 0 0</pose>
+        <gravity>false</gravity>
         <inertial>
           <mass>6.215</mass>
           <pose>-0.04204 8.01e-05 0.07964 0 0 0</pose>
@@ -368,6 +369,7 @@
 
       <link name="arm_link_1">
         <pose>0 0 0.10 0 0 0</pose>
+        <gravity>false</gravity>
         <inertial>
           <mass>3.067</mass>
           <pose>9.77e-05 -0.00012 0.23841 0 0 0</pose>
@@ -391,6 +393,7 @@
 
       <link name="arm_link_2">
         <pose>0 0 0.39 0 0 0</pose>
+        <gravity>false</gravity>
         <inertial>
           <mass>3.909</mass>
           <pose>0.00078 -0.00212 0.10124 0 0 0</pose>
@@ -414,6 +417,7 @@
 
       <link name="arm_link_3">
         <pose>0 0 0.66 0 0 0</pose>
+        <gravity>false</gravity>
         <inertial>
           <mass>2.944</mass>
           <pose>0.02281 0.00106 0.05791 0 0 0</pose>
@@ -437,6 +441,7 @@
 
       <link name="arm_link_4">
         <pose>0 0 0.73 0 0 0</pose>
+        <gravity>false</gravity>
         <inertial>
           <mass>1.328</mass>
           <pose>0.2247 0.00015 0.00041 0 0 0</pose>
@@ -460,6 +465,7 @@
 
       <link name="arm_link_5">
         <pose>0.302 0 0.73 0 0 0</pose>
+        <gravity>false</gravity>
         <inertial>
           <mass>0.546</mass>
           <pose>-0.00109 3.68e-05 6.22e-05 0 0 0</pose>
@@ -483,6 +489,7 @@
 
       <link name="arm_link_6">
         <pose>0.374 0 0.73 0 0 0</pose>
+        <gravity>false</gravity>
         <inertial>
           <mass>0.137</mass>
           <pose>-0.00706 -0.00017 -1.32e-06 0 0 0</pose>
@@ -506,18 +513,21 @@
 
       <!-- ROS-Industrial virtual frames (massless) -->
       <link name="arm_base">
+        <gravity>false</gravity>
         <inertial>
           <mass>0.001</mass>
           <inertia><ixx>1e-6</ixx><ixy>0</ixy><ixz>0</ixz><iyy>1e-6</iyy><iyz>0</iyz><izz>1e-6</izz></inertia>
         </inertial>
       </link>
       <link name="arm_flange">
+        <gravity>false</gravity>
         <inertial>
           <mass>0.001</mass>
           <inertia><ixx>1e-6</ixx><ixy>0</ixy><ixz>0</ixz><iyy>1e-6</iyy><iyz>0</iyz><izz>1e-6</izz></inertia>
         </inertial>
       </link>
       <link name="arm_tool0">
+        <gravity>false</gravity>
         <inertial>
           <mass>0.001</mass>
           <inertia><ixx>1e-6</ixx><ixy>0</ixy><ixz>0</ixz><iyy>1e-6</iyy><iyz>0</iyz><izz>1e-6</izz></inertia>
