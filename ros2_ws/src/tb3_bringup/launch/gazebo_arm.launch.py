@@ -48,6 +48,7 @@ def generate_launch_description():
     pkg_tb3_sim  = get_package_share_directory('nav2_minimal_tb3_sim')
     pkg_tb3_desc = get_package_share_directory('tb3_description')
     pkg_ros_gz   = get_package_share_directory('ros_gz_sim')
+    pkg_irb120   = get_package_share_directory('irb120_jazzy_sim')
 
     declare_use_rviz = DeclareLaunchArgument(
         'use_rviz', default_value='false',
@@ -69,6 +70,9 @@ def generate_launch_description():
     gz_parent = AppendEnvironmentVariable(
         'GZ_SIM_RESOURCE_PATH',
         str(Path(pkg_tb3_sim).parent.resolve()))
+    gz_irb120 = AppendEnvironmentVariable(
+        'GZ_SIM_RESOURCE_PATH',
+        str(Path(pkg_irb120).parent.resolve()))
 
     # ── 1. Gazebo Harmonic ─────────────────────────────────────────────────────
     gazebo = IncludeLaunchDescription(
@@ -162,6 +166,7 @@ def generate_launch_description():
         declare_y,
         gz_models,
         gz_parent,
+        gz_irb120,
         gazebo,
         robot_state_publisher,
         bridge,
