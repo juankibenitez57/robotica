@@ -6,7 +6,8 @@ Estados:
   NAVIGATING  — ejecutando NavigateToPose hacia un waypoint
   EXPLORING   — patrullando waypoints secuencialmente
   SEARCHING   — recorriendo habitaciones buscando un objeto
-  APPROACHING — acercándose a objetivo detectado (Fase 4)
+  APPROACHING — acercándose a objetivo detectado (Fase 5)
+  GRASPING    — ejecutando trayectoria de agarre con el brazo (Fase 6)
   STOPPING    — cancelación en curso (cancel_goal_async enviado)
   STOPPED     — parado, listo para siguiente comando
   REPORTING   — publicando estado del sistema
@@ -17,6 +18,8 @@ Estados:
 Eventos válidos:
   navigate, explore, search, approach, report  — inician acción desde IDLE
   goal_succeeded, goal_failed, goal_cancelled  — resultado de NAV2
+  grasp                                        — APPROACHING completado → iniciar agarre
+  grasp_done, grasp_failed                     — resultado del brazo
   stop                                         — cancela acción activa
   recovery_start / recovery_done               — ciclo recovery tras ERROR
   reset                                        — salida manual de ERROR/STOPPED
@@ -33,6 +36,7 @@ class State(str, Enum):
     EXPLORING   = 'EXPLORING'
     SEARCHING   = 'SEARCHING'
     APPROACHING = 'APPROACHING'
+    GRASPING    = 'GRASPING'
     STOPPING    = 'STOPPING'
     STOPPED     = 'STOPPED'
     REPORTING   = 'REPORTING'
@@ -61,6 +65,11 @@ _TRANSITIONS: Dict[Tuple[State, str], State] = {
     (State.APPROACHING, 'goal_succeeded'):  State.IDLE,
     (State.APPROACHING, 'goal_failed'):     State.ERROR,
     (State.APPROACHING, 'goal_cancelled'):  State.STOPPED,
+    (State.APPROACHING, 'grasp'):           State.GRASPING,
+    # Resultado del brazo (Fase 6)
+    (State.GRASPING, 'grasp_done'):         State.IDLE,
+    (State.GRASPING, 'grasp_failed'):       State.ERROR,
+    (State.GRASPING, 'stop'):               State.IDLE,
     # Detección visual YOLO durante búsqueda → acercamiento
     (State.SEARCHING, 'target_found'):      State.APPROACHING,
     (State.REPORTING, 'done'):              State.IDLE,

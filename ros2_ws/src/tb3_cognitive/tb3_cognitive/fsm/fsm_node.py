@@ -38,11 +38,14 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 from action_msgs.msg import GoalStatus
 
+from builtin_interfaces.msg import Duration
+from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String
 from nav2_msgs.action import NavigateToPose
 from nav2_msgs.srv import ClearEntireCostmap
 from tb3_msgs.msg import CognitiveCommand, DetectedObject
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 from .states import RobotFSM, State
 from .memory import CognitiveMemory
@@ -153,6 +156,11 @@ class CognitiveFSMNode(Node):
 
         # ── NAV2 action client ────────────────────────────────────────────────
         self._nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
+
+        # ── Arm action client (Fase 6) ────────────────────────────────────────
+        self._arm_client = ActionClient(
+            self, FollowJointTrajectory,
+            '/arm_controller/follow_joint_trajectory')
 
         # ── Costmap clear services ────────────────────────────────────────────
         self._global_clear = self.create_client(
@@ -611,17 +619,88 @@ class CognitiveFSMNode(Node):
             time.sleep(0.10)  # 10 Hz
 
         self._zero_velocity()
-        self._search_target_label = None
-        self._last_detection      = None
 
-        msg_txt = (f'¡{label!r} encontrado y alcanzado! '
-                   'Robot parado frente al objetivo.')
+        msg_txt = f'¡{label!r} alcanzado! Iniciando agarre...'
         self.get_logger().info(f'[APPROACH] {msg_txt}')
         self._publish_status(msg_txt)
         self._memory.record_success(label)
 
         with self._fsm_lock:
-            self._fsm.trigger('goal_succeeded')  # APPROACHING → IDLE
+            triggered = self._fsm.trigger('grasp')  # APPROACHING → GRASPING
+
+        if triggered:
+            self._do_grasping(label)
+        else:
+            # FSM interrumpida externamente (stop, etc.)
+            self._search_target_label = None
+            self._last_detection      = None
+
+    def _do_grasping(self, label: str) -> None:
+        """Ejecuta trayectoria de agarre con el brazo IRB120 (Fase 6)."""
+        self.get_logger().info(f'[GRASP] Iniciando agarre de {label!r}')
+        self._publish_status(f'Agarrando {label!r}...')
+
+        if not self._arm_client.wait_for_server(timeout_sec=5.0):
+            self.get_logger().error('[GRASP] arm_controller no disponible')
+            with self._fsm_lock:
+                self._fsm.trigger('grasp_failed')
+            self._search_target_label = None
+            self._last_detection      = None
+            return
+
+        goal = FollowJointTrajectory.Goal()
+        goal.trajectory.joint_names = [
+            'arm_joint_1', 'arm_joint_2', 'arm_joint_3',
+            'arm_joint_4', 'arm_joint_5', 'arm_joint_6',
+        ]
+
+        def _pt(positions, sec):
+            p = JointTrajectoryPoint()
+            p.positions = positions
+            p.time_from_start = Duration(sec=sec)
+            return p
+
+        goal.trajectory.points = [
+            _pt([0.0,  0.5, -0.3, 0.0, 0.8, 0.0], 3),  # pre-grasp
+            _pt([0.0,  0.7, -0.1, 0.0, 0.8, 0.0], 5),  # descender al objeto
+            _pt([0.0,  0.3,  0.0, 0.0, 0.5, 0.0], 7),  # levantar
+            _pt([0.0,  0.0,  0.0, 0.0, 0.0, 0.0], 9),  # home
+        ]
+
+        done    = threading.Event()
+        outcome = ['failed']
+
+        def _result_cb(future):
+            res = future.result()
+            outcome[0] = (
+                'succeeded' if res.status == GoalStatus.STATUS_SUCCEEDED
+                else 'failed'
+            )
+            done.set()
+
+        def _goal_cb(future):
+            handle = future.result()
+            if not handle.accepted:
+                outcome[0] = 'rejected'
+                done.set()
+                return
+            handle.get_result_async().add_done_callback(_result_cb)
+
+        self._arm_client.send_goal_async(goal).add_done_callback(_goal_cb)
+        done.wait(timeout=12.0)
+
+        self._search_target_label = None
+        self._last_detection      = None
+
+        with self._fsm_lock:
+            if outcome[0] == 'succeeded':
+                self.get_logger().info(f'[GRASP] ✓ {label!r} agarrado')
+                self._publish_status(f'¡{label!r} agarrado con éxito!')
+                self._fsm.trigger('grasp_done')   # GRASPING → IDLE
+            else:
+                self.get_logger().warn(f'[GRASP] Agarre fallido ({outcome[0]})')
+                self._publish_status(f'Agarre de {label!r} fallido.')
+                self._fsm.trigger('grasp_failed') # GRASPING → ERROR
 
     # ── Stop / cancela goal activo ────────────────────────────────────────────
 
