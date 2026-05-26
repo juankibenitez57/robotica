@@ -162,8 +162,8 @@ def generate_launch_description():
         gazebo,
         robot_state_publisher,
         bridge,
-        TimerAction(period=3.0, actions=[spawn_robot]),
-        TimerAction(period=4.0, actions=[spawn_jsb]),
-        TimerAction(period=5.0, actions=[spawn_arm_ctrl]),
+        TimerAction(period=15.0, actions=[spawn_robot]),
+        TimerAction(period=4.0,  actions=[spawn_jsb]),
+        TimerAction(period=5.0,  actions=[spawn_arm_ctrl]),
         rviz,
     ])

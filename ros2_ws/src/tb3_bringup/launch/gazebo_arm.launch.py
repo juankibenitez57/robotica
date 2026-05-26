@@ -170,9 +170,9 @@ def generate_launch_description():
         gazebo,
         robot_state_publisher,
         bridge,
-        # Spawn retrasado 3s: RSP debe publicar robot_description antes del spawn
-        TimerAction(period=3.0, actions=[spawn_robot]),
-        TimerAction(period=4.0, actions=[spawn_jsb]),
-        TimerAction(period=5.0, actions=[spawn_arm_ctrl]),
+        # Spawn retrasado 15s: Gazebo Harmonic tarda ~10-15s en WSL2
+        TimerAction(period=15.0, actions=[spawn_robot]),
+        TimerAction(period=4.0,  actions=[spawn_jsb]),
+        TimerAction(period=5.0,  actions=[spawn_arm_ctrl]),
         rviz,
     ])

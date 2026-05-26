@@ -912,8 +912,10 @@ class CognitiveFSMNode(Node):
             self.get_logger().info('[NAV2] Goal succeeded ✓')
             self._publish_status('Llegué al destino.')
             with self._fsm_lock:
-                # No tocar si ya estamos en APPROACHING (detección disparó transición)
-                if self._fsm.state != State.APPROACHING:
+                # No tocar si APPROACHING, SEARCHING o EXPLORING:
+                # esos bucles gestionan su propia progresión de waypoints
+                if self._fsm.state not in (
+                        State.APPROACHING, State.SEARCHING, State.EXPLORING):
                     self._fsm.trigger('goal_succeeded')
             self._signal_goal_done('succeeded')
 
