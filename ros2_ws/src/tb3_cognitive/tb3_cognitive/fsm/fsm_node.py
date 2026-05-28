@@ -41,6 +41,7 @@ from action_msgs.msg import GoalStatus
 from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 from std_msgs.msg import String
 from nav2_msgs.action import NavigateToPose
 from nav2_msgs.srv import ClearEntireCostmap
@@ -53,6 +54,8 @@ from .memory import CognitiveMemory
 
 # Mapeo: target NLP normalizado → etiquetas YOLO COCO esperadas (normalizadas)
 _YOLO_LABELS: dict[str, set[str]] = {
+    'football': {'sports_ball', 'orange', 'ball'},
+    'balon':    {'sports_ball', 'orange', 'ball'},
     'botella':  {'bottle'},
     'bottle':   {'bottle'},
     'persona':  {'person'},
@@ -139,8 +142,12 @@ class CognitiveFSMNode(Node):
         self._goal_done_outcome: list = ['failed']
 
         # ── Detección visual (Fase 5) ─────────────────────────────────────────
-        self._search_target_label: str | None = None   # activa filtro detección
+        self._search_target_label: str | None = None
         self._last_detection: DetectedObject | None = None
+
+        # ── Posición del robot (de odometría) ─────────────────────────────────
+        self._robot_x: float = 0.0
+        self._robot_y: float = 0.0
 
         # ── Watchdog de navegación ────────────────────────────────────────────
         self._nav_watchdog_timer = None
@@ -178,6 +185,9 @@ class CognitiveFSMNode(Node):
         self._detection_sub = self.create_subscription(
             DetectedObject, '/detected_objects',
             self._detection_callback, 10)
+        self._odom_sub = self.create_subscription(
+            Odometry, '/odom',
+            self._odom_callback, 10)
 
         self._publish_fsm_state(State.IDLE)
         self.get_logger().info(
@@ -297,11 +307,12 @@ class CognitiveFSMNode(Node):
 
     def _dispatch(self, action: str, target: str) -> None:
         dispatch_map = {
-            'navigate': lambda: self._do_navigate(target),
-            'explore':  self._do_explore,
-            'search':   lambda: self._do_search(target),
-            'approach': lambda: self._do_approach(target),
-            'report':   self._do_report,
+            'navigate':   lambda: self._do_navigate(target),
+            'explore':    self._do_explore,
+            'search':     lambda: self._do_search(target),
+            'approach':   lambda: self._do_approach(target),
+            'report':     self._do_report,
+            'score_goal': self._do_score_goal,
         }
         fn = dispatch_map.get(action)
         if fn:
@@ -512,6 +523,151 @@ class CognitiveFSMNode(Node):
 
         self._do_visual_approach()
 
+    # ── Secuencia de gol (Fase 7) ─────────────────────────────────────────────
+
+    def _do_score_goal(self) -> None:
+        """
+        1. Ir a posición de búsqueda frente a la portería norte
+        2. Activar YOLO y escanear para detectar el balón
+        3. Posicionarse detrás del balón alineado con la portería
+        4. Empujar el balón con cmd_vel directo
+        5. Celebrar con TTS
+        """
+        self.get_logger().info('[SCORING] Iniciando secuencia de gol')
+        self._publish_status('⚽ ¡A por el gol! Moviéndome a posición...')
+
+        # ── 1. Ir a posición de búsqueda ─────────────────────────────
+        # (0, 2) mirando al norte (π/2) — frente al balón que está en (0, 5)
+        outcome = self._send_nav_goal_blocking(
+            0.0, 2.0, yaw=math.pi / 2, label='scoring_search')
+
+        with self._fsm_lock:
+            if self._fsm.state != State.SCORING:
+                return
+        if outcome == 'cancelled':
+            return
+
+        # ── 2. Activar YOLO y escanear girando ───────────────────────
+        self._search_target_label = 'football'
+        self._last_detection = None
+        self._publish_status('Escaneando campo buscando el balón...')
+
+        twist_scan = Twist()
+        twist_scan.angular.z = 0.3
+        t_scan = time.time()
+        while time.time() - t_scan < 5.0:
+            with self._fsm_lock:
+                if self._fsm.state != State.SCORING:
+                    self._zero_velocity()
+                    return
+            if self._last_detection is not None:
+                self.get_logger().info('[SCORING] ¡Balón detectado por YOLO!')
+                break
+            self._cmd_vel_pub.publish(twist_scan)
+            time.sleep(0.1)
+        self._zero_velocity()
+
+        # ── 3. Posicionarse detrás del balón ─────────────────────────
+        # Navegar a (0, 4.5) mirando norte → robot queda 0.5 m detrás del balón
+        self._publish_status('Posicionándome para el disparo...')
+        outcome = self._send_nav_goal_blocking(
+            0.0, 4.5, yaw=math.pi / 2, label='scoring_kick')
+
+        with self._fsm_lock:
+            if self._fsm.state != State.SCORING:
+                return
+        if outcome == 'cancelled':
+            return
+
+        # ── 4. Alineación visual rápida (si YOLO ve el balón) ────────
+        if self._last_detection is not None:
+            self._publish_status('Alineando con el balón...')
+            t_align = time.time()
+            while time.time() - t_align < 3.0:
+                with self._fsm_lock:
+                    if self._fsm.state != State.SCORING:
+                        self._zero_velocity()
+                        return
+                det = self._last_detection
+                if det is None:
+                    break
+                error_x = det.center_x_norm - 0.5
+                if abs(error_x) < 0.08:
+                    break
+                twist = Twist()
+                twist.angular.z = -0.35 * error_x
+                self._cmd_vel_pub.publish(twist)
+                time.sleep(0.1)
+            self._zero_velocity()
+            time.sleep(0.3)
+
+        # ── 5. EMPUJAR el balón hacia la portería ────────────────────
+        # Para cuando el robot llega a y >= 6.5 (línea de gol, portería en y=7)
+        # Timeout de 60s por si algo falla
+        GOAL_LINE_Y = 6.5
+        self._publish_status('¡¡¡CHUTANDO A PORTERÍA!!!')
+        self.get_logger().info(
+            f'[SCORING] Empujando a 0.6 m/s hasta y>={GOAL_LINE_Y}')
+
+        twist_push = Twist()
+        twist_push.linear.x = 0.6
+        t_push = time.time()
+        while time.time() - t_push < 60.0:
+            with self._fsm_lock:
+                if self._fsm.state != State.SCORING:
+                    self._zero_velocity()
+                    return
+            if self._robot_y >= GOAL_LINE_Y:
+                self.get_logger().info(
+                    f'[SCORING] ¡Portería alcanzada! y={self._robot_y:.2f}')
+                break
+            self._cmd_vel_pub.publish(twist_push)
+            time.sleep(0.1)
+        self._zero_velocity()
+        time.sleep(0.5)
+
+        # ── 6. CELEBRACIÓN ───────────────────────────────────────────
+        self._publish_status('⚽ ¡¡¡GOOOL!!!')
+        self.get_logger().info('[SCORING] ¡¡¡GOL!!! Celebrando...')
+        self._speak('He marcado gol señor Jorge, siuuuuuuuuuuuuuuuuuuuuuu')
+        time.sleep(3.0)
+
+        self._search_target_label = None
+        self._last_detection = None
+        with self._fsm_lock:
+            if self._fsm.state == State.SCORING:
+                self._fsm.trigger('goal_succeeded')
+
+    def _speak(self, text: str) -> None:
+        """TTS: PowerShell (WSL2) → espeak-ng → espeak."""
+        import subprocess
+        safe = text.replace("'", " ").replace('"', ' ')
+        # PowerShell Windows TTS (funciona en WSL2 sin dependencias extra)
+        ps_cmd = (
+            f"Add-Type -AssemblyName System.Speech; "
+            f"$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+            f"$s.Speak('{safe}')"
+        )
+        try:
+            subprocess.Popen(
+                ['powershell.exe', '-NoProfile', '-Command', ps_cmd])
+            self.get_logger().info(f'[TTS] PowerShell: {text!r}')
+            return
+        except FileNotFoundError:
+            pass
+        # Fallback Linux
+        for cmd in (
+            ['espeak-ng', '-v', 'es', '-s', '120', '-a', '200', text],
+            ['espeak',    '-v', 'es', '-s', '120', text],
+        ):
+            try:
+                subprocess.Popen(cmd)
+                self.get_logger().info(f'[TTS] espeak: {text!r}')
+                return
+            except FileNotFoundError:
+                continue
+        self.get_logger().warn(f'[TTS] Sin TTS disponible — mensaje: {text!r}')
+
     def _do_report(self) -> None:
         nav_ok  = self._nav_client.server_is_ready()
         summary = self._memory.summary()
@@ -524,6 +680,12 @@ class CognitiveFSMNode(Node):
         with self._fsm_lock:
             self._fsm.trigger('done')
 
+    # ── Odometría — tracking de posición ─────────────────────────────────────
+
+    def _odom_callback(self, msg: Odometry) -> None:
+        self._robot_x = msg.pose.pose.position.x
+        self._robot_y = msg.pose.pose.position.y
+
     # ── Detección visual YOLO (Fase 5) ────────────────────────────────────────
 
     def _detection_callback(self, msg: DetectedObject) -> None:
@@ -532,7 +694,11 @@ class CognitiveFSMNode(Node):
         with self._fsm_lock:
             cur = self._fsm.state
             if cur == State.APPROACHING:
-                # Approach en curso — actualiza detección para el servoing
+                if self._detection_matches_target(msg.label, self._search_target_label):
+                    self._last_detection = msg
+                return
+            if cur == State.SCORING:
+                # Solo actualiza la detección — el gol gestiona su propio flujo
                 if self._detection_matches_target(msg.label, self._search_target_label):
                     self._last_detection = msg
                 return
@@ -912,10 +1078,10 @@ class CognitiveFSMNode(Node):
             self.get_logger().info('[NAV2] Goal succeeded ✓')
             self._publish_status('Llegué al destino.')
             with self._fsm_lock:
-                # No tocar si APPROACHING, SEARCHING o EXPLORING:
-                # esos bucles gestionan su propia progresión de waypoints
+                # No tocar si el estado gestiona su propia progresión
                 if self._fsm.state not in (
-                        State.APPROACHING, State.SEARCHING, State.EXPLORING):
+                        State.APPROACHING, State.SEARCHING,
+                        State.EXPLORING,   State.SCORING):
                     self._fsm.trigger('goal_succeeded')
             self._signal_goal_done('succeeded')
 

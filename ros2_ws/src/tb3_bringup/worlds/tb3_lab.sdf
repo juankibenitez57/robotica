@@ -293,5 +293,48 @@
       </link>
     </model>
 
+    <!-- ═══════════════════════════════════════════════════
+         BALÓN DE FÚTBOL — dinámico, empujable por el robot
+         Posición: (0, 5) = 2 metros por delante de goal_north (y=7)
+         Radio: 0.11 m  |  Masa: 0.45 kg  (balón reglamentario)
+    ═══════════════════════════════════════════════════ -->
+    <model name="football">
+      <pose>0 5 0.11 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.45</mass>
+          <inertia>
+            <ixx>0.00222</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>0.00222</iyy><iyz>0</iyz>
+            <izz>0.00222</izz>
+          </inertia>
+        </inertial>
+        <collision name="col">
+          <geometry>
+            <sphere><radius>0.11</radius></sphere>
+          </geometry>
+          <surface>
+            <friction>
+              <ode><mu>0.6</mu><mu2>0.6</mu2></ode>
+            </friction>
+            <bounce>
+              <restitution_coefficient>0.5</restitution_coefficient>
+              <threshold>0.01</threshold>
+            </bounce>
+          </surface>
+        </collision>
+        <visual name="vis">
+          <geometry>
+            <sphere><radius>0.11</radius></sphere>
+          </geometry>
+          <material>
+            <ambient>1.0 0.4 0.0 1</ambient>
+            <diffuse>1.0 0.4 0.0 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
   </world>
 </sdf>

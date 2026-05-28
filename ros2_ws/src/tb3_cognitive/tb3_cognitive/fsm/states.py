@@ -37,6 +37,7 @@ class State(str, Enum):
     SEARCHING   = 'SEARCHING'
     APPROACHING = 'APPROACHING'
     GRASPING    = 'GRASPING'
+    SCORING     = 'SCORING'
     STOPPING    = 'STOPPING'
     STOPPED     = 'STOPPED'
     REPORTING   = 'REPORTING'
@@ -70,6 +71,12 @@ _TRANSITIONS: Dict[Tuple[State, str], State] = {
     (State.GRASPING, 'grasp_done'):         State.IDLE,
     (State.GRASPING, 'grasp_failed'):       State.ERROR,
     (State.GRASPING, 'stop'):               State.IDLE,
+    # Secuencia de gol (Fase 7)
+    (State.IDLE,    'score_goal'):           State.SCORING,
+    (State.SCORING, 'goal_succeeded'):       State.IDLE,
+    (State.SCORING, 'goal_failed'):          State.ERROR,
+    (State.SCORING, 'goal_cancelled'):       State.STOPPED,
+    (State.SCORING, 'stop'):                 State.STOPPING,
     # Detección visual YOLO durante búsqueda → acercamiento
     (State.SEARCHING, 'target_found'):      State.APPROACHING,
     (State.REPORTING, 'done'):              State.IDLE,
@@ -79,6 +86,7 @@ _TRANSITIONS: Dict[Tuple[State, str], State] = {
     (State.SEARCHING,   'stop'):            State.STOPPING,
     (State.APPROACHING, 'stop'):            State.STOPPING,
     (State.RECOVERY,    'stop'):            State.STOPPING,
+    (State.SCORING,     'stop'):            State.STOPPING,
     # STOPPING → STOPPED cuando el goal responde (cualquier resultado)
     (State.STOPPING, 'goal_cancelled'):     State.STOPPED,
     (State.STOPPING, 'goal_succeeded'):     State.STOPPED,

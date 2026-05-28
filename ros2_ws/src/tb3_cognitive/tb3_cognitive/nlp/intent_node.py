@@ -80,6 +80,16 @@ CLASS_EXAMPLES = {
         "what do you see", "describe the room", "tell me what's there",
         "report status", "what's in front of you",
     ],
+    "score_goal": [
+        "mete un gol", "marca un gol", "mete gol", "marca gol",
+        "empuja el balón a la portería", "chuta el balón",
+        "ve a por el balón y mete gol", "busca el balón y marca",
+        "anota un gol", "haz un gol", "introduce el balón en la red",
+        "mete el balón", "chutar a portería", "tirar a gol",
+        "score a goal", "kick the ball into the goal", "shoot at goal",
+        "score", "push the ball to the goal", "find the ball and score",
+        "go score", "get the ball and score",
+    ],
 }
 
 LOW_CONF_THRESHOLD = 0.40
@@ -192,6 +202,8 @@ class NLPIntentNode(Node):
     # ── Extracción de entidad destino ─────────────────────────────────────────
 
     def _extract_target(self, text: str, action: str) -> str:
+        if action == 'score_goal':
+            return 'football'
         t = text.lower()
         if action in ('navigate', 'explore'):
             for loc in LOCATIONS:
